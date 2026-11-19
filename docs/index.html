@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<!--
+  For licensing see accompanying LICENSE file.
+  Copyright (C) 2026 Apple Inc. All Rights Reserved.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Depth Pro 2: sharp, temporally consistent metric depth from one image or a video. Video and image comparisons against prior work, results, and method.">
+    <!-- Link previews (iMessage, Slack): our depth of the first image scene. -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Depth Pro 2">
+    <meta property="og:description" content="Sharp and Temporally Consistent Metric Monocular Depth">
+    <meta property="og:image" content="https://apple-aiml-research.github.io/ml-depth-pro-2/assets/preview.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <script>
+        // Open at the top on a reload, not where the reader last was. Links to #sections still jump.
+        if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+
+        // Match the system's light or dark mode, and follow it when it changes.
+        // ?theme=dark or ?theme=light forces one, for checking.
+        (() => {
+            const dark = matchMedia('(prefers-color-scheme: dark)');
+            const forced = new URLSearchParams(location.search).get('theme');
+            const apply = () => document.documentElement.setAttribute('data-bs-theme',
+                forced === 'dark' || forced === 'light' ? forced : dark.matches ? 'dark' : 'light');
+            apply();
+            dark.addEventListener('change', apply);
+        })();
+    </script>
+    <title>Depth Pro 2</title>
+
+    <script src="jquery-3.6.0.min.js"></script>
+    <script src="ui.js"></script>
+    <script src="jquery.event.move.js"></script>
+    <script src="jquery.twentytwenty.js"></script>
+    <script src="bootstrap.bundle.min.js"></script>
+    <script src="data.js"></script>
+    <script src="gallery.js"></script>
+
+    <link href="bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="twentytwenty.css">
+
+    <style>
+        /* The top bar slides in once the title has scrolled away. */
+        .navbar.fixed-top {
+            transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+            transform: translateY(-100%);
+            opacity: 0;
+            background: rgba(var(--bs-body-bg-rgb), 0.8);
+            -webkit-backdrop-filter: saturate(180%) blur(16px);
+            backdrop-filter: saturate(180%) blur(16px);
+            border-bottom: 1px solid var(--line);
+        }
+        .navbar.fixed-top.show { transform: translateY(0); opacity: 1; }
+        .navbar-nav .nav-link.active { color: #0d6efd; font-weight: 600; }
+
+        .container { max-width: 1800px; }
+
+        .thumbnail-container { margin-bottom: 4px; }
+        .thumbnail-row {
+            display: grid;
+            /* One row; it scrolls sideways when the clips do not fit. */
+            grid-auto-flow: column;
+            grid-auto-columns: minmax(96px, 150px);
+            /* safe: a row wider than the window starts at its first clip, which can scroll to. */
+            justify-content: safe center;
+            overflow-x: auto;
+            gap: 12px;
+            padding: 6px 2px;
+        }
+        .thumbnail-item {
+            position: relative;
+            cursor: pointer;
+            border: 3px solid var(--bs-border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            transition: all 0.3s;
+            aspect-ratio: 16 / 9;
+            background: var(--bs-tertiary-bg);
+        }
+        .thumbnail-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .thumbnail-item:hover {
+            border-color: #adb5bd;
+            transform: translateY(-3px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .thumbnail-item.active {
+            border-color: #0d6efd;
+            box-shadow: 0 0 0 2px #0d6efd;
+        }
+        /* Title on the left, then one row per group: label, chips. */
+        .method-picker {
+            display: grid;
+            grid-template-columns: max-content max-content auto;
+            justify-content: center;
+            align-items: center;
+            column-gap: 14px;
+            row-gap: 8px;
+            margin: 14px 0 10px;
+        }
+        .method-picker > .method-group-label { grid-column: 2; }
+        .method-picker > .method-chips { grid-column: 3; }
+        .method-group-label {
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--bs-secondary-color);
+            text-align: right;
+        }
+        .method-picker-title {
+            grid-column: 1;
+            grid-row: 1 / span var(--rows);  /* one row per group (buildPicker in ui.js) */
+            font-size: 0.95rem;
+            color: var(--bs-secondary-color);
+        }
+        .method-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+        .method-chip {
+            border: 1px solid var(--bs-border-color);
+            background: var(--bs-body-bg);
+            color: var(--bs-body-color);
+            border-radius: 999px;
+            padding: 5px 14px;
+            font-size: 0.88rem;
+            line-height: 1.2;
+            transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+        }
+        .method-chip:hover { border-color: #adb5bd; background: var(--bs-tertiary-bg); }
+        .method-chip.active { background: #0d6efd; border-color: #0d6efd; color: #fff; }
+        @media (max-width: 767px) {
+            .method-picker { grid-template-columns: 1fr; justify-items: center; row-gap: 6px; }
+            .method-picker > * { grid-column: 1 !important; grid-row: auto; }
+            .method-group-label { text-align: center; margin-top: 6px; }
+            .method-chips { justify-content: center; gap: 6px; }
+            /* Smaller chips: on a 360 px phone, video models fit in two rows and image models in one. */
+            .method-chip { font-size: 0.8rem; padding: 9px 10px; }
+        }
+
+        /* Hero: the source with our depth wiping back and forth over it. */
+        .hero {
+            position: relative;
+            aspect-ratio: 16 / 10;
+            border-radius: 20px;
+            overflow: hidden;
+            background: #111;
+            box-shadow: 0 30px 80px -20px rgba(11, 13, 18, 0.45);
+        }
+        /* One video with the wipe rendered in, so source and depth
+           cannot drift apart. */
+        .hero video {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        /* Top corners, as on the comparison videos. */
+        .hero .hero-label {
+            position: absolute;
+            top: 8px;
+            padding: 4px 12px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.55);
+            color: #fff;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+        .hero .hero-label.left { left: 8px; }
+        .hero .hero-label.right { right: 8px; }
+
+        .comparison-area {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        /* Only while there is no clip: with one, the padding was empty space that stageHeight
+           took for content, so the videos stayed small. */
+        .comparison-area:not(:has(.row)) { min-height: 400px; }
+        .loading-message { text-align: center; padding: 40px; color: var(--bs-secondary-color); }
+        .buffering {
+            position: absolute;
+            inset: 0;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(var(--bs-body-bg-rgb), 0.6);
+        }
+
+        #comparison-container {
+            position: relative;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .comparison-area video {
+            width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 8px;
+            margin: 0 auto;
+        }
+        .twentytwenty-container { border-radius: 8px; overflow: hidden; margin: 0 auto; }
+        /* Stretch both depth videos to the same box, so their edges line up at the slider. */
+        .twentytwenty-container video { height: 100%; object-fit: fill; }
+        /* One line: a wrapped label made the toggle taller for some clips, and moved what is below. */
+        .view-toggle .btn { font-size: 13px; white-space: nowrap; }
+        .video-controls { margin-top: 12px; }
+        .middle-controls { display: flex; justify-content: center; gap: 8px; }
+        /* Stacked (narrow window): each control row is full width and centred, whatever the
+           pair's width (pairColumns in ui.js). */
+        @media (max-width: 991.98px) {
+            .video-controls > * { flex: 0 0 100% !important; width: 100% !important; }
+        }
+        /* Phone: one line, the play buttons left of the toggle. Smaller, so the longest baseline name fits. */
+        @media (max-width: 767px) {
+            .video-controls { --bs-gutter-x: 0; justify-content: center; align-items: center; gap: 6px; margin-top: 8px; }
+            .video-controls > * { flex: 0 0 auto !important; width: auto !important; }
+            .video-controls .middle-controls { gap: 4px; }
+            .video-controls .middle-controls:empty { display: none; }
+            .video-controls .icon-btn { width: 32px; height: 32px; position: relative; }
+            /* Wider buttons push the toggle onto a second line on a 360 px phone. A taller area to tap
+               instead, out to half the 4 px gap at the sides. */
+            .video-controls .icon-btn::after { content: ''; position: absolute; inset: -6px -2px; }
+            .view-toggle .btn { font-size: 12px; padding: 10px 7px; }
+        }
+        /* Side by side: these buttons sit in the middle, between the two videos or images. */
+        @media (min-width: 992px) {
+            .video-controls { position: relative; }
+            .video-controls .middle-controls { position: absolute; left: 50%; top: 50%; width: auto !important; transform: translate(-50%, -50%); margin: 0; }
+        }
+        .icon-btn {
+            width: 40px;
+            height: 40px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--bs-border-color);
+            border-radius: 50%;
+            background: var(--bs-body-bg);
+            color: var(--bs-body-color);
+            transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+        }
+        .icon-btn:hover { border-color: #0d6efd; color: #0d6efd; background: var(--bs-tertiary-bg); }
+
+        /* Our depth alone, fullscreen (showFullscreen in ui.js). Out of sight until the browser
+           makes it fill the screen. */
+        .fullscreen-media { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; --strip: 0px; }
+        .fullscreen-media:fullscreen { opacity: 1; pointer-events: auto; background: #000; cursor: zoom-out; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        /* As large as fits above the thumbnails (--strip high). */
+        .fullscreen-media:has(.fullscreen-thumbs) { --strip: 96px; }
+        .fullscreen-frame { position: relative; width: min(100vw, calc((100vh - var(--strip)) * var(--ar))); aspect-ratio: var(--ar); }
+        .fullscreen-thumbs { height: var(--strip); max-width: 100vw; grid-auto-columns: 112px; align-items: center; cursor: default; }
+        .fullscreen-thumbs .thumbnail-item { border-color: #444; background: #222; }
+        .fullscreen-frame > video, .fullscreen-frame > img { width: 100%; height: 100%; object-fit: fill; display: block; }
+        .fullscreen-media .media-label { left: 16px; top: 16px; padding: 4px 12px; font-size: 15px; }
+        .fullscreen-nav {
+            position: absolute; top: 50%; transform: translateY(-50%);
+            width: 56px; height: 56px; border: 0; border-radius: 50%;
+            background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 36px; line-height: 1;
+            opacity: 0.5; transition: opacity 0.15s; cursor: pointer;
+        }
+        .fullscreen-nav:hover { opacity: 1; }
+        .fullscreen-nav.prev { left: 20px; }
+        .fullscreen-nav.next { right: 20px; }
+
+        /* Phone only: arrows on the source, to the next or previous clip or image (swipeNav in ui.js). */
+        .swipe-nav { display: none; }
+        @media (max-width: 767px) {
+            .swipe-nav {
+                position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
+                display: flex; align-items: center; justify-content: center;
+                width: 36px; height: 36px; padding: 0 0 2px; border: 0; border-radius: 50%;
+                background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 24px; line-height: 1;
+            }
+            /* A 44 px area to tap, larger than the circle. */
+            .swipe-nav::after { content: ''; position: absolute; inset: -4px; }
+            .swipe-nav.prev { left: 6px; }
+            .swipe-nav.next { right: 6px; }
+        }
+
+        /* A media column of a gallery: fixed height (setStage in ui.js), its media centered in it. */
+        .stage-col { display: flex; flex-direction: column; justify-content: center; }
+        .source-wrap { position: relative; width: 100%; margin: 0 auto; }  /* centred when narrowed */
+        .media-label {
+            position: absolute;
+            left: 8px;
+            top: 8px;
+            padding: 2px 8px;
+            font-size: 12px;
+            color: #fff;
+            background: rgba(0,0,0,0.6);
+            border-radius: 4px;
+        }
+
+        :root {
+            --ink: #0b0d12;
+            --ink-2: #3b4250;
+            --ink-3: #6b7280;
+            --line: #e6e8ec;
+            --band: #f5f6f8;
+            --soon-bg: #eef0f3;
+            --soon-tag: #dfe2e7;
+            --soon-fg: #596170;
+            --pill-bg: #0b0d12;
+            --pill-fg: #fff;
+            --code-bg: #f5f6f8;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            color: var(--ink);
+            -webkit-font-smoothing: antialiased;
+        }
+        .navbar-brand { font-size: 1rem; letter-spacing: -0.01em; }
+        .navbar .nav-link { font-size: 0.9rem; }
+
+        .masthead { padding: 64px 0 32px; text-align: center; }
+        .masthead h1 {
+            font-size: clamp(2.6rem, 6vw, 4.6rem);
+            font-weight: 800;
+            letter-spacing: -0.035em;
+            line-height: 1.02;
+            margin-bottom: 14px;
+        }
+        .masthead .subtitle {
+            font-size: clamp(1.1rem, 2.2vw, 1.55rem);
+            font-weight: 500;
+            letter-spacing: -0.015em;
+            color: var(--ink-2);
+            max-width: 760px;
+            margin: 0 auto 28px;
+        }
+        .masthead .authors { font-size: 1rem; color: var(--ink-2); line-height: 1.7; margin-bottom: 4px; }
+        /* A name never breaks across lines. */
+        .masthead .authors span { white-space: nowrap; }
+        .masthead .affiliation { font-size: 0.95rem; color: var(--ink-3); margin-bottom: 30px; }
+
+        .link-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 999px;
+            background: var(--pill-bg);
+            color: var(--pill-fg);
+            font-weight: 600;
+            font-size: 0.95rem;
+            text-decoration: none;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .link-pill:hover { color: var(--pill-fg); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); }
+        .link-pill svg { width: 18px; height: 18px; }
+        .link-pill .emoji { font-size: 1.05rem; line-height: 1; }
+        .link-pill.soon { background: var(--soon-bg); color: var(--soon-fg); pointer-events: none; }
+        .link-pill.soon::after {
+            content: "soon";
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            padding: 2px 7px;
+            border-radius: 999px;
+            background: var(--soon-tag);
+            color: var(--soon-fg);
+        }
+        /* Phone: smaller, and no "soon" tag, so all four fit on one line. */
+        @media (max-width: 767px) {
+            .link-pill { padding: 11px 10px; gap: 5px; font-size: 0.8rem; }
+            .link-pill svg { width: 14px; height: 14px; }
+            .link-pill .emoji { font-size: 0.9rem; }
+            .link-pill.soon::after { display: none; }
+        }
+        /* Bootstrap's grey (#6c757d) is under 4.5:1 on the band background. */
+        .view-toggle .btn-outline-secondary:not(.active) { color: var(--ink-2); }
+
+        /* As wide as fits in the window below the title (16:10), so the whole hero shows without
+           scrolling. 24px leaves a margin under it. --masthead-h is set by the script below. */
+        .hero-wrap {
+            max-width: min(1280px, max(480px, calc((100vh - var(--masthead-h, 400px) - 24px) * 16 / 10 + 24px)));
+            margin: 0 auto;
+            padding: 0 12px;
+        }
+
+        .section { padding: 96px 0; }
+        .section.band { background: var(--band); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+        .section-head { text-align: center; max-width: 760px; margin: 0 auto 36px; }
+        .section-head h2 { font-size: clamp(1.8rem, 3.4vw, 2.6rem); font-weight: 800; letter-spacing: -0.03em; margin: 0; }
+        .prose { max-width: 760px; margin: 0 auto; font-size: 1.1rem; line-height: 1.75; color: var(--ink-2); }
+        /* The same size as the subtitle: 1.1rem on phones, up to 1.55rem on desktop. */
+        #intro .prose { text-wrap: balance; font-size: clamp(1.1rem, 2.2vw, 1.55rem); line-height: 1.5; }
+
+        @media (max-width: 767px) {
+            .masthead { padding: 40px 0 20px; }
+            .masthead .subtitle { margin-bottom: 18px; }
+            .masthead .affiliation { margin-bottom: 18px; }
+            .section { padding: 48px 0; }
+            .section-head { margin-bottom: 20px; }
+        }
+
+        .section.band .thumbnail-item { background: var(--bs-body-bg); }
+        .section.band .method-chip:not(.active) { background: var(--bs-body-bg); }
+
+        .bibtex {
+            position: relative;
+            max-width: 980px;
+            margin: 0 auto;
+            border-radius: 16px;
+            background: var(--code-bg);
+            border: 1px solid var(--line);
+            color: var(--ink);
+            padding: 26px 28px;
+        }
+        .bibtex pre { margin: 0; font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap; color: inherit; }
+        .bibtex .copy-btn {
+            position: absolute;
+            top: 14px; right: 14px;
+            border: 1px solid var(--bs-border-color);
+            background: var(--bs-body-bg);
+            color: var(--ink);
+            border-radius: 999px;
+            padding: 4px 14px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .bibtex .copy-btn:hover { background: var(--bs-tertiary-bg); }
+        /* On a phone the first line reaches the button: start the text below it. */
+        @media (max-width: 767px) {
+            .bibtex { padding: 56px 14px 14px; border-radius: 12px; }
+            .bibtex pre { font-size: 0.68rem; line-height: 1.5; }
+            .bibtex .copy-btn { top: 10px; right: 10px; padding: 10px 16px; }
+        }
+
+        .site-footer { padding: 36px 0 44px; text-align: center; color: var(--ink-3); font-size: 0.85rem; }
+
+        [data-bs-theme="dark"] {
+            --ink: #f2f3f5;
+            --ink-2: #c3c8d1;
+            --ink-3: #8e96a3;
+            --line: #2a2f38;
+            --band: #14171c;
+            --soon-bg: #22262e;
+            --soon-tag: #2e333c;
+            --soon-fg: #a9b0bb;
+            --pill-bg: #f2f3f5;
+            --pill-fg: #0b0d12;
+            --code-bg: #14171c;
+            --bs-body-bg: #0b0d12;
+            --bs-body-bg-rgb: 11, 13, 18;
+        }
+        [data-bs-theme="dark"] .hero { box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.8); }
+
+        /* Architecture figure. */
+        :root {
+            --arch-box: #e8e8e8;
+            --arch-box-dark: #b4b4b4;
+            --arch-panel: #ececec;
+            --arch-stroke: #8a8a8a;
+            --arch-feat: #59656e;
+        }
+        [data-bs-theme="dark"] {
+            --arch-box: #2a2e35;
+            --arch-box-dark: #444a54;
+            --arch-panel: #1b1f25;
+            --arch-stroke: #6f7782;
+            --arch-feat: #9aa6b0;
+        }
+        .arch { display: block; width: 100%; max-width: 1280px; height: auto; margin: 0 auto; }
+        .arch-detail, .caption-phone { display: none; }
+        @media (max-width: 767px) {
+            .arch-detail { display: block; margin-top: 28px; }
+            .caption-phone { display: block; }
+            .caption-full { display: none; }
+            .figure-caption.caption-phone { margin-top: 12px; }
+            /* The overview panel is drawn smaller than the detail: larger labels (in figure units). */
+            .arch:not(.arch-detail) .arch-text { font-size: 28px; }
+        }
+        .arch text { fill: var(--bs-body-color); font-family: inherit; }
+        .arch .arch-badge { fill: var(--bs-body-bg); stroke: var(--bs-body-color); stroke-width: 2.5; }
+        .arch .arch-badge-text { font-weight: 700; }
+        .arch .arch-box { fill: var(--arch-box); stroke: var(--arch-stroke); stroke-width: 1.5; }
+        .arch .arch-box-dark { fill: var(--arch-box-dark); stroke: var(--arch-stroke); stroke-width: 1.5; }
+        .arch .arch-panel { fill: var(--arch-panel); stroke: var(--arch-stroke); stroke-width: 1.5; }
+        .arch .arch-frame { fill: none; stroke: #000; stroke-width: 2; }
+        .arch .arch-line { fill: none; stroke: var(--arch-stroke); stroke-width: 2; }
+        .arch .arch-dotted { stroke-dasharray: 2 4; }
+        .arch .arch-arrowhead { fill: var(--arch-stroke); }
+        .arch .arch-within { fill: none; stroke: #c8323c; stroke-width: 2.5; stroke-dasharray: 3 3; }
+        .arch .arch-across { fill: none; stroke: #3d7cb0; stroke-width: 2.5; }
+        .arch .arch-feat { fill: var(--arch-feat); stroke: #333a40; stroke-width: 1; }
+        .arch .arch-tok-a { fill: #6cc49a; stroke: #2e7a55; stroke-width: 1.2; }
+        .arch .arch-tok-b { fill: #f4a77c; stroke: #b5592a; stroke-width: 1.2; }
+        .arch .arch-tok-c { fill: #74b3dd; stroke: #2f6e98; stroke-width: 1.2; }
+        .figure-caption { max-width: 900px; margin: 24px auto 0; text-align: center; color: var(--ink-2); font-size: 0.95rem; line-height: 1.6; }
+        /* The numbered circles of the architecture figure, inline in its caption. */
+        #method .figure-caption { text-align: left; }
+        .caption-badge { display: inline-flex; align-items: center; justify-content: center; width: 1.4em; height: 1.4em; border: 1.5px solid var(--bs-body-color); border-radius: 50%; font-size: 0.8em; font-weight: 700; color: var(--bs-body-color); vertical-align: 0.1em; }
+
+        /* Trade-off chart (tradeoff_chart.js). */
+        .tradeoff { max-width: 980px; margin: 0 auto; }
+        .tradeoff-plot { position: relative; }
+        .tradeoff-svg { display: block; width: 100%; height: auto; overflow: visible; }
+        .tradeoff-grid { stroke: var(--bs-border-color); stroke-width: 1; }
+        .tradeoff-frame { fill: none; stroke: var(--bs-border-color); stroke-width: 1.2; }
+        .tradeoff-tick { fill: var(--bs-secondary-color); font-size: calc(12px * var(--k, 1)); }
+        .tradeoff-axis { fill: var(--bs-body-color); font-size: calc(14px * var(--k, 1)); font-weight: 600; }
+        .tradeoff-better { fill: var(--bs-secondary-color); font-size: 12px; font-style: italic; }
+        .tradeoff-point { transition: opacity 0.3s; cursor: pointer; outline: none; }
+        .tradeoff-point.off { opacity: 0; pointer-events: none; }
+        .tradeoff-point circle { transition: r 0.15s; }
+        .tradeoff-point.hover circle, .tradeoff-point:focus circle { r: calc(10px * var(--k, 1)); }
+        .tradeoff-name { fill: var(--bs-body-color); font-size: calc(12px * var(--k, 1)); pointer-events: none; }
+        .tradeoff-leader { opacity: 0.6; pointer-events: none; }
+        .tradeoff-point.group-ours .tradeoff-name { font-weight: 700; fill: #d8701f; }
+        .tradeoff-tip {
+            position: absolute;
+            transform: translate(-50%, -100%);
+            min-width: 170px;
+            white-space: nowrap;
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: var(--bs-body-bg);
+            border: 1px solid var(--bs-border-color);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            font-size: 12.5px;
+            pointer-events: none;
+            z-index: 5;
+        }
+        .tradeoff-tip.below { transform: translate(-50%, 0); }
+        .tradeoff-tip > div:not(.tradeoff-tip-name):not(.tradeoff-tip-group) { display: flex; justify-content: space-between; align-items: baseline; gap: 20px; line-height: 1.6; }
+        .tradeoff-tip span { color: var(--bs-secondary-color); }
+        .tradeoff-tip-name { font-weight: 700; font-size: 14px; }
+        .tradeoff-tip-group { color: var(--bs-secondary-color); margin-bottom: 6px; }
+        .tradeoff-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin-top: 10px; }
+        .tradeoff-key { border: 0; background: none; padding: 2px 4px; font-size: 13px; color: var(--bs-body-color); display: inline-flex; align-items: center; gap: 7px; }
+        .tradeoff-key i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+        .tradeoff-key i.hollow { border: 2px solid var(--bs-secondary-color); }
+        .tradeoff-key.off { opacity: 0.4; text-decoration: line-through; }
+        .tradeoff-key.static { color: var(--bs-secondary-color); }
+
+        /* Image comparisons (image_compare.js). */
+        .image-box { position: relative; margin: 0 auto; max-width: 100%; border-radius: 8px; overflow: hidden; background: var(--bs-tertiary-bg); }
+        .image-box img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; }
+        .image-slider { --pos: 50%; }
+        .image-slider .image-before { clip-path: inset(0 calc(100% - var(--pos)) 0 0); }
+        .image-slider .twentytwenty-handle { left: var(--pos); }
+        .image-slider input[type=range] { position: absolute; inset: 0; z-index: 50; width: 100%; height: 100%; margin: 0; opacity: 0; pointer-events: none; }
+
+        /* Each comparisons section fits in one window (see stageHeight in ui.js). */
+        .section.compact { padding: 36px 0; scroll-margin-top: 56px; }
+        .compact-head { display: flex; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap; margin-bottom: 16px; }
+        .compact-head h2 { font-size: clamp(1.5rem, 2.6vw, 2rem); font-weight: 800; letter-spacing: -0.03em; margin: 0; }
+        @media (max-width: 767px) {
+            .section.compact { padding: 24px 0; }
+            .compact-head { margin-bottom: 10px; }
+            .method-picker { margin: 10px 0 6px; }
+            #comparison .row, .image-stage { --bs-gutter-y: 0.5rem; }
+            /* Larger areas to tap. */
+            .tradeoff-key { padding: 10px 6px; }
+            #navbarNav .nav-link { padding-top: 12px; padding-bottom: 12px; }
+        }
+        .gallery-notes { text-align: center; color: var(--bs-secondary-color); font-size: 0.85rem; max-width: 900px; margin: 6px auto 0; }
+        .gallery-notes .credit-line { display: block; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .gallery-notes .credit-line a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar navbar-expand-lg fixed-top">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="#">Depth Pro 2</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="#videos">Videos</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#images">Images</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#tradeoff-section">Results</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#method">Method</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#citation">Citation</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <header class="masthead container">
+        <h1 id="title">Depth Pro 2</h1>
+        <p class="subtitle">Sharp and Temporally Consistent Metric Monocular Depth</p>
+        <p class="authors"><span>Peiyun Hu,</span> <span>Marko Mihajlovic,</span> <span>Lyndon Duong,</span> <span>Lahav Lipson,</span> <span>Wei Dong,</span><br class="d-none d-md-inline"> <span>Ama&euml;l Delaunoy,</span> <span>Stephan R. Richter,</span> <span>Vladlen Koltun</span></p>
+        <p class="affiliation">Apple</p>
+
+        <div class="d-flex justify-content-center gap-2 flex-wrap">
+            <!-- TODO: set the paper href and drop "soon" when the arXiv link exists. -->
+            <a href="#" class="link-pill soon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>
+                Paper
+            </a>
+            <a href="https://github.com/apple-aiml-research/ml-depth-pro-2" class="link-pill" target="_blank" rel="noopener">
+                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+                Code
+            </a>
+            <a href="https://huggingface.co/apple/DepthPro2" class="link-pill" target="_blank" rel="noopener"><span class="emoji" aria-hidden="true">&#129303;</span>Models</a>
+            <!-- Hugging Face demo, held back until its release is confirmed.
+            <a href="https://huggingface.co/spaces/apple/DepthPro2" class="link-pill" target="_blank" rel="noopener"><span class="emoji" aria-hidden="true">&#129303;</span>Demo</a>
+            -->
+        </div>
+    </header>
+
+    <script>
+        // The hero sizes itself from the space left under the title (see .hero-wrap).
+        (() => {
+            const header = document.querySelector('.masthead');
+            const set = () => document.documentElement.style.setProperty('--masthead-h', header.offsetHeight + 'px');
+            set();
+            window.addEventListener('resize', set);
+        })();
+    </script>
+
+    <div class="hero-wrap">
+        <div class="hero">
+            <!-- poster.jpg is frame 1 of wipe.mp4, so nothing jumps when the video starts.
+                 ?v= is the first 8 hex digits of each file's md5: change it with the file. -->
+            <!-- Phones get wipe_720.mp4 (about 3 MB); wipe.mp4 is about 19 MB. -->
+            <video poster="assets/videos/hero/monkeys/poster.jpg?v=21d06077" muted loop playsinline autoplay preload="auto">
+                <source src="assets/videos/hero/monkeys/wipe_720.mp4?v=7d521ca8" type="video/mp4" media="(max-width: 767px)">
+                <source src="assets/videos/hero/monkeys/wipe.mp4?v=cf36a21b" type="video/mp4">
+            </video>
+            <span class="hero-label left">Source</span>
+            <span class="hero-label right">Depth Pro 2</span>
+        </div>
+    </div>
+
+    <main>
+    <section id="intro" class="section">
+        <div class="container">
+            <p class="prose text-center"><strong>Depth Pro 2 estimates sharp, metric, temporally consistent depth for images and video at full resolution.</strong></p>
+        </div>
+    </section>
+
+    <section id="videos" class="section band compact">
+        <div class="container">
+            <div class="compact-head"><h2>Video comparisons</h2></div>
+            <div class="comparison-area" id="comparison">
+                <div class="loading-message">Select a video to compare</div>
+            </div>
+            <div class="method-picker" role="group" aria-label="Compare against" id="methods"></div>
+            <div class="thumbnail-container"><div class="thumbnail-row" id="thumbnails"></div></div>
+            <p class="gallery-notes">2K–4K sources. Videos generated with Depth Pro 2 H+ at native resolution, baselines at their default settings. Inverse depth, with one color range per model for the whole clip.</p>
+        </div>
+    </section>
+
+    <section id="images" class="section compact">
+        <div class="container">
+            <div class="compact-head"><h2>Image comparisons</h2></div>
+            <div id="image-compare"></div>
+            <p id="image-notes" class="gallery-notes">Images generated with Depth Pro 2 H+. Each method at its default resolution.</p>
+            <script src="credits.js"></script>
+            <script src="images.js"></script>
+            <script src="image_compare.js"></script>
+        </div>
+    </section>
+
+    <section id="tradeoff-section" class="section">
+        <div class="container">
+            <div class="section-head"><h2>Sharpness versus temporal consistency</h2></div>
+            <div id="tradeoff" class="tradeoff"></div>
+            <p class="figure-caption">Depth Pro 2 outperforms prior work operating on a single frame or multiple frames on sharpness (Boundary F1 score) and temporal consistency (Jitter). Results averaged over Sintel and Spring datasets.</p>
+            <script src="tradeoff.js"></script>
+            <script src="tradeoff_chart.js"></script>
+        </div>
+    </section>
+
+    <section id="method" class="section band">
+        <div class="container">
+            <div class="section-head"><h2>Method</h2></div>
+            <!-- architecture:start -->
+<svg class="arch" viewBox="0 0 1700 735" role="img" aria-labelledby="arch-title" xmlns="http://www.w3.org/2000/svg">
+<title id="arch-title">Architecture: a multi-view transformer processes the input frames jointly, and a DPT decoder predicts an inverse depth map per frame.</title>
+<defs><marker id="arch-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arch-arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+<image href="assets/figures/architecture/in1.jpg" x="12" y="19" width="318" height="180" preserveAspectRatio="xMidYMid slice"><title>Input frame 1</title></image>
+<rect class="arch-frame" x="12" y="19" width="318" height="180"/>
+<text class="arch-text" x="171" y="215" font-size="21" text-anchor="middle" dominant-baseline="central">Input frame 1</text>
+<image href="assets/figures/architecture/out1.jpg" x="612" y="19" width="319" height="180" preserveAspectRatio="xMidYMid slice"><title>Output frame 1</title></image>
+<rect class="arch-frame" x="612" y="19" width="319" height="180"/>
+<text class="arch-text" x="771" y="215" font-size="21" text-anchor="middle" dominant-baseline="central">Output frame 1</text>
+<path class="arch-line" d="M332,109 L366,109" marker-end="url(#arch-arrow)"/>
+<path class="arch-line" d="M454,109 L500,109" marker-end="url(#arch-arrow)"/>
+<path class="arch-line" d="M568,109 L610,109" marker-end="url(#arch-arrow)"/>
+<image href="assets/figures/architecture/in2.jpg" x="12" y="245" width="318" height="180" preserveAspectRatio="xMidYMid slice"><title>Input frame 2</title></image>
+<rect class="arch-frame" x="12" y="245" width="318" height="180"/>
+<text class="arch-text" x="171" y="441" font-size="21" text-anchor="middle" dominant-baseline="central">Input frame 2</text>
+<image href="assets/figures/architecture/out2.jpg" x="612" y="245" width="319" height="180" preserveAspectRatio="xMidYMid slice"><title>Output frame 2</title></image>
+<rect class="arch-frame" x="612" y="245" width="319" height="180"/>
+<text class="arch-text" x="771" y="441" font-size="21" text-anchor="middle" dominant-baseline="central">Output frame 2</text>
+<path class="arch-line" d="M332,335 L366,335" marker-end="url(#arch-arrow)"/>
+<path class="arch-line" d="M454,335 L500,335" marker-end="url(#arch-arrow)"/>
+<path class="arch-line" d="M568,335 L610,335" marker-end="url(#arch-arrow)"/>
+<image href="assets/figures/architecture/inN.jpg" x="12" y="509" width="318" height="180" preserveAspectRatio="xMidYMid slice"><title>Input frame N</title></image>
+<rect class="arch-frame" x="12" y="509" width="318" height="180"/>
+<text class="arch-text" x="171" y="705" font-size="21" text-anchor="middle" dominant-baseline="central">Input frame N</text>
+<image href="assets/figures/architecture/outN.jpg" x="612" y="509" width="319" height="180" preserveAspectRatio="xMidYMid slice"><title>Output frame N</title></image>
+<rect class="arch-frame" x="612" y="509" width="319" height="180"/>
+<text class="arch-text" x="771" y="705" font-size="21" text-anchor="middle" dominant-baseline="central">Output frame N</text>
+<path class="arch-line" d="M332,599 L366,599" marker-end="url(#arch-arrow)"/>
+<path class="arch-line" d="M454,599 L500,599" marker-end="url(#arch-arrow)"/>
+<path class="arch-line" d="M568,599 L610,599" marker-end="url(#arch-arrow)"/>
+<text class="arch-text" x="171" y="483" font-size="30" text-anchor="middle" dominant-baseline="central">&#8942;</text>
+<text class="arch-text" x="771" y="483" font-size="30" text-anchor="middle" dominant-baseline="central">&#8942;</text>
+<rect class="arch-box" x="368" y="10" width="86" height="687" rx="12"/>
+<text class="arch-text" x="410" y="345" font-size="23" text-anchor="middle" dominant-baseline="central" transform="rotate(90 410 345)">Multi-view transformer</text>
+<circle class="arch-badge" cx="410" cy="60" r="25"/>
+<text class="arch-badge-text" x="410" y="61" font-size="24" text-anchor="middle" dominant-baseline="central">1</text>
+<circle class="arch-badge" cx="443" cy="598" r="25"/>
+<text class="arch-badge-text" x="443" y="599" font-size="24" text-anchor="middle" dominant-baseline="central">2</text>
+<rect class="arch-box-dark" x="502" y="12" width="66" height="193" rx="12"/>
+<text class="arch-text" x="535" y="108.5" font-size="23" text-anchor="middle" dominant-baseline="central" transform="rotate(90 535 108.5)">DPT Decoder</text>
+<rect class="arch-box-dark" x="502" y="238" width="66" height="194" rx="12"/>
+<text class="arch-text" x="535" y="335.0" font-size="23" text-anchor="middle" dominant-baseline="central" transform="rotate(90 535 335.0)">DPT Decoder</text>
+<rect class="arch-box-dark" x="502" y="502" width="66" height="194" rx="12"/>
+<text class="arch-text" x="535" y="599.0" font-size="23" text-anchor="middle" dominant-baseline="central" transform="rotate(90 535 599.0)">DPT Decoder</text>
+<rect class="arch-panel" x="1005" y="10" width="310" height="402" rx="12"/>
+<text class="arch-text" x="1052" y="23" font-size="19" text-anchor="start" dominant-baseline="central" transform="rotate(90 1052 23)">Tokens</text>
+<text class="arch-text" x="1028" y="23" font-size="19" text-anchor="start" dominant-baseline="central" transform="rotate(90 1028 23)">frame <tspan font-style='italic'>i&#8722;1</tspan></text>
+<rect class="arch-within" x="1078" y="21" width="40" height="122" rx="8"/>
+<rect class="arch-within" x="1248" y="21" width="40" height="122" rx="8"/>
+<rect class="arch-tok-a" x="1088" y="33" width="20" height="20" rx="0"/>
+<rect class="arch-tok-a" x="1088" y="59" width="20" height="20" rx="0"/>
+<rect class="arch-tok-a" x="1088" y="85" width="20" height="20" rx="0"/>
+<rect class="arch-tok-a" x="1088" y="111" width="20" height="20" rx="0"/>
+<rect class="arch-tok-a" x="1188" y="33" width="20" height="20" rx="0"/>
+<rect class="arch-tok-a" x="1188" y="59" width="20" height="20" rx="0"/>
+<rect class="arch-tok-a" x="1188" y="85" width="20" height="20" rx="0"/>
+<rect class="arch-tok-a" x="1188" y="111" width="20" height="20" rx="0"/>
+<rect class="arch-tok-a" x="1258" y="33" width="20" height="20" rx="0"/>
+<rect class="arch-tok-a" x="1258" y="59" width="20" height="20" rx="0"/>
+<rect class="arch-tok-a" x="1258" y="85" width="20" height="20" rx="0"/>
+<rect class="arch-tok-a" x="1258" y="111" width="20" height="20" rx="0"/>
+<path class="arch-line arch-dotted" d="M1064,83 L1076,83" marker-end="url(#arch-arrow)"/>
+<path class="arch-line arch-dotted" d="M1120,83 L1176,83" marker-end="url(#arch-arrow)"/>
+<path class="arch-line" d="M1220,83 L1246,83" marker-end="url(#arch-arrow)"/>
+<path class="arch-line arch-dotted" d="M1290,83 L1312,83" marker-end="url(#arch-arrow)"/>
+<text class="arch-text" x="1052" y="155" font-size="19" text-anchor="start" dominant-baseline="central" transform="rotate(90 1052 155)">Tokens</text>
+<text class="arch-text" x="1028" y="155" font-size="19" text-anchor="start" dominant-baseline="central" transform="rotate(90 1028 155)">frame <tspan font-style='italic'>i</tspan></text>
+<rect class="arch-within" x="1078" y="153" width="40" height="118" rx="8"/>
+<rect class="arch-within" x="1248" y="153" width="40" height="118" rx="8"/>
+<rect class="arch-tok-b" x="1088" y="165" width="20" height="20" rx="0"/>
+<rect class="arch-tok-b" x="1088" y="191" width="20" height="20" rx="0"/>
+<rect class="arch-tok-b" x="1088" y="217" width="20" height="20" rx="0"/>
+<rect class="arch-tok-b" x="1088" y="243" width="20" height="20" rx="0"/>
+<rect class="arch-tok-b" x="1188" y="165" width="20" height="20" rx="0"/>
+<rect class="arch-tok-b" x="1188" y="191" width="20" height="20" rx="0"/>
+<rect class="arch-tok-b" x="1188" y="217" width="20" height="20" rx="0"/>
+<rect class="arch-tok-b" x="1188" y="243" width="20" height="20" rx="0"/>
+<rect class="arch-tok-b" x="1258" y="165" width="20" height="20" rx="0"/>
+<rect class="arch-tok-b" x="1258" y="191" width="20" height="20" rx="0"/>
+<rect class="arch-tok-b" x="1258" y="217" width="20" height="20" rx="0"/>
+<rect class="arch-tok-b" x="1258" y="243" width="20" height="20" rx="0"/>
+<path class="arch-line arch-dotted" d="M1064,211 L1076,211" marker-end="url(#arch-arrow)"/>
+<path class="arch-line arch-dotted" d="M1120,211 L1176,211" marker-end="url(#arch-arrow)"/>
+<path class="arch-line" d="M1220,211 L1246,211" marker-end="url(#arch-arrow)"/>
+<path class="arch-line arch-dotted" d="M1290,211 L1312,211" marker-end="url(#arch-arrow)"/>
+<text class="arch-text" x="1052" y="285" font-size="19" text-anchor="start" dominant-baseline="central" transform="rotate(90 1052 285)">Tokens</text>
+<text class="arch-text" x="1028" y="285" font-size="19" text-anchor="start" dominant-baseline="central" transform="rotate(90 1028 285)">frame <tspan font-style='italic'>i+1</tspan></text>
+<rect class="arch-within" x="1078" y="283" width="40" height="118" rx="8"/>
+<rect class="arch-within" x="1248" y="283" width="40" height="118" rx="8"/>
+<rect class="arch-tok-c" x="1088" y="295" width="20" height="20" rx="0"/>
+<rect class="arch-tok-c" x="1088" y="321" width="20" height="20" rx="0"/>
+<rect class="arch-tok-c" x="1088" y="347" width="20" height="20" rx="0"/>
+<rect class="arch-tok-c" x="1088" y="373" width="20" height="20" rx="0"/>
+<rect class="arch-tok-c" x="1188" y="295" width="20" height="20" rx="0"/>
+<rect class="arch-tok-c" x="1188" y="321" width="20" height="20" rx="0"/>
+<rect class="arch-tok-c" x="1188" y="347" width="20" height="20" rx="0"/>
+<rect class="arch-tok-c" x="1188" y="373" width="20" height="20" rx="0"/>
+<rect class="arch-tok-c" x="1258" y="295" width="20" height="20" rx="0"/>
+<rect class="arch-tok-c" x="1258" y="321" width="20" height="20" rx="0"/>
+<rect class="arch-tok-c" x="1258" y="347" width="20" height="20" rx="0"/>
+<rect class="arch-tok-c" x="1258" y="373" width="20" height="20" rx="0"/>
+<path class="arch-line arch-dotted" d="M1064,341 L1076,341" marker-end="url(#arch-arrow)"/>
+<path class="arch-line arch-dotted" d="M1120,341 L1176,341" marker-end="url(#arch-arrow)"/>
+<path class="arch-line" d="M1220,341 L1246,341" marker-end="url(#arch-arrow)"/>
+<path class="arch-line arch-dotted" d="M1290,341 L1312,341" marker-end="url(#arch-arrow)"/>
+<rect class="arch-across" x="1178" y="21" width="42" height="380" rx="8"/>
+<circle class="arch-badge" cx="1315" cy="38" r="25"/>
+<text class="arch-badge-text" x="1315" y="39" font-size="24" text-anchor="middle" dominant-baseline="central">1</text>
+<rect class="arch-within" x="1352" y="137" width="36" height="36" rx="8"/>
+<text class="arch-text" x="1406" y="155" font-size="21" text-anchor="start" dominant-baseline="central">Attention within frame</text>
+<rect class="arch-across" x="1352" y="189" width="36" height="36" rx="8"/>
+<text class="arch-text" x="1406" y="207" font-size="21" text-anchor="start" dominant-baseline="central">Attention across frames</text>
+<rect class="arch-feat" x="1352" y="263" width="36" height="26" rx="0"/>
+<text class="arch-text" x="1406" y="276" font-size="21" text-anchor="start" dominant-baseline="central">Dense feature map</text>
+<rect class="arch-panel" x="1005" y="423" width="588" height="294" rx="12"/>
+<path class="arch-line" d="M1005,507 L1042,507" marker-end="url(#arch-arrow)"/>
+<rect class="arch-box" x="1044" y="447" width="64" height="121" rx="12"/>
+<text class="arch-text" x="1076" y="507" font-size="23" text-anchor="middle" dominant-baseline="central" transform="rotate(90 1076 507)">Layer L<tspan baseline-shift='sub' font-size='15'>1</tspan></text>
+<rect class="arch-feat" x="1125" y="605" width="37" height="28" rx="0"/>
+<path class="arch-line" d="M1110,507 L1142,507 L1142,603" marker-end="url(#arch-arrow)"/>
+<path class="arch-line arch-dotted" d="M1142,507 L1172,507" marker-end="url(#arch-arrow)"/>
+<path class="arch-line" d="M1142,633 L1142,695"/>
+<text class="arch-text" x="1092" y="677" font-size="17" text-anchor="middle" dominant-baseline="central">H/32&#215;W/32</text>
+<rect class="arch-box" x="1174" y="447" width="64" height="121" rx="12"/>
+<text class="arch-text" x="1206" y="507" font-size="23" text-anchor="middle" dominant-baseline="central" transform="rotate(90 1206 507)">Layer L<tspan baseline-shift='sub' font-size='15'>2</tspan></text>
+<rect class="arch-feat" x="1248" y="600" width="50" height="38" rx="0"/>
+<path class="arch-line" d="M1240,507 L1272,507 L1272,598" marker-end="url(#arch-arrow)"/>
+<path class="arch-line arch-dotted" d="M1272,507 L1302,507" marker-end="url(#arch-arrow)"/>
+<path class="arch-line" d="M1272,638 L1272,695"/>
+<text class="arch-text" x="1220" y="677" font-size="17" text-anchor="middle" dominant-baseline="central">H/16&#215;W/16</text>
+<rect class="arch-box" x="1304" y="447" width="64" height="121" rx="12"/>
+<text class="arch-text" x="1336" y="507" font-size="23" text-anchor="middle" dominant-baseline="central" transform="rotate(90 1336 507)">Layer L<tspan baseline-shift='sub' font-size='15'>3</tspan></text>
+<rect class="arch-feat" x="1371" y="595" width="63" height="48" rx="0"/>
+<path class="arch-line" d="M1370,507 L1403,507 L1403,593" marker-end="url(#arch-arrow)"/>
+<path class="arch-line arch-dotted" d="M1403,507 L1432,507" marker-end="url(#arch-arrow)"/>
+<path class="arch-line" d="M1403,643 L1403,695"/>
+<text class="arch-text" x="1360" y="677" font-size="17" text-anchor="middle" dominant-baseline="central">H/8&#215;W/8</text>
+<rect class="arch-box" x="1434" y="447" width="64" height="121" rx="12"/>
+<text class="arch-text" x="1466" y="507" font-size="23" text-anchor="middle" dominant-baseline="central" transform="rotate(90 1466 507)">Layer L<tspan baseline-shift='sub' font-size='15'>4</tspan></text>
+<rect class="arch-feat" x="1488" y="588" width="82" height="62" rx="0"/>
+<path class="arch-line" d="M1500,507 L1528,507 L1528,586" marker-end="url(#arch-arrow)"/>
+<path class="arch-line" d="M1528,650 L1528,695"/>
+<text class="arch-text" x="1488" y="677" font-size="17" text-anchor="middle" dominant-baseline="central">H/4&#215;W/4</text>
+<path class="arch-line" d="M1142,695 L1646,695 L1646,648" marker-end="url(#arch-arrow)"/>
+<circle class="arch-badge" cx="1556" cy="461" r="25"/>
+<text class="arch-badge-text" x="1556" y="462" font-size="24" text-anchor="middle" dominant-baseline="central">2</text>
+<rect class="arch-box-dark" x="1615" y="452" width="65" height="193" rx="12"/>
+<text class="arch-text" x="1647" y="548" font-size="23" text-anchor="middle" dominant-baseline="central" transform="rotate(90 1647 548)">DPT Decoder</text>
+</svg>
+<!-- architecture:end -->
+            <p class="figure-caption caption-full"><span class="caption-part">Our depth estimation network consists of a multi-view transformer that ingests one or multiple input frames and processes them jointly, and a DPT decoder, which predicts an inverse depth map per input frame.</span> <span class="caption-part"><span class="caption-badge">1</span> The transformer shares information across frames: after the first third of its blocks, it alternates attention within each frame and attention across frames.</span> <span class="caption-part"><span class="caption-badge">2</span> The DPT decoder takes tokens from several transformer blocks, assembles them into feature maps at 1/32 to 1/4 of the input resolution, and decodes them into an inverse depth map per frame.</span></p>
+        </div>
+    </section>
+
+    <script>
+        // On a phone the whole figure is too small to read: show its left half (the overview),
+        // then a copy zoomed on detail 1, then one on detail 2. Each copy needs its own marker id.
+        // Under each piece goes the sentence of the caption about it.
+        (() => {
+            const full = document.querySelector('svg.arch');
+            const box = full.getAttribute('viewBox');
+            const detail = (n, viewBox) => {
+                const copy = full.cloneNode(true);
+                copy.classList.add('arch-detail');
+                copy.setAttribute('aria-hidden', 'true');
+                copy.querySelector('title').remove();
+                copy.querySelector('marker').id = `arch-arrow-detail${n}`;
+                copy.querySelectorAll('[marker-end]').forEach(e => e.setAttribute('marker-end', `url(#arch-arrow-detail${n})`));
+                copy.setAttribute('viewBox', viewBox);
+                return copy;
+            };
+            const caption = part => {
+                const p = document.createElement('p');
+                p.className = 'figure-caption caption-phone';
+                p.append(...part.cloneNode(true).childNodes);
+                return p;
+            };
+            const parts = document.querySelectorAll('.caption-full .caption-part');
+            full.after(caption(parts[0]), detail(1, '995 0 705 420'), caption(parts[1]),
+                       detail(2, '995 418 705 317'), caption(parts[2]));
+            const phone = matchMedia('(max-width: 767px)');
+            const apply = () => full.setAttribute('viewBox', phone.matches ? '0 0 945 735' : box);
+            phone.addEventListener('change', apply);
+            apply();
+        })();
+    </script>
+
+    <section id="citation" class="section">
+        <div class="container">
+            <div class="section-head"><h2>Citation</h2></div>
+            <div class="bibtex">
+                <button type="button" class="copy-btn" id="copy-bibtex">Copy</button>
+                <pre><code id="bibtex">@article{DepthPro2:2026:arxiv,
+  title      = {Depth Pro 2: Sharp and Temporally Consistent Metric Monocular Depth},
+  author     = {Peiyun Hu and Marko Mihajlovic and Lyndon Duong and Lahav Lipson and Wei Dong and Ama\"{e}l Delaunoy and Stephan R. Richter and Vladlen Koltun},
+  journal    = {arXiv:261X.XXXXX},
+  year       = {2026},
+  url        = {https://arxiv.org/abs/261X.XXXXX},
+}</code></pre>
+            </div>
+        </div>
+    </section>
+    </main>
+
+    <footer class="site-footer">
+        <p class="mb-0">&copy; 2026 Apple Inc.</p>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const navbar = document.querySelector('.navbar.fixed-top');
+            const titleElement = document.getElementById('title');
+            function checkNavbarVisibility() {
+                navbar.classList.toggle('show', titleElement.getBoundingClientRect().bottom < 0);
+            }
+            window.addEventListener('scroll', checkNavbarVisibility);
+            checkNavbarVisibility();
+
+            // Highlight the section under the top bar. Bootstrap's scrollspy picked the wrong
+            // link for sections taller than the window (Videos, Images).
+            const links = [...document.querySelectorAll('#navbarNav .nav-link')];
+            const sections = links.map(a => document.querySelector(a.getAttribute('href')));
+            function spy() {
+                const line = navbar.offsetHeight + 40;
+                let i = -1;
+                sections.forEach((s, k) => { if (s.getBoundingClientRect().top <= line) i = k; });
+                // At the bottom of the page the last section may never reach the line.
+                if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) i = sections.length - 1;
+                links.forEach((a, k) => {
+                    a.classList.toggle('active', k === i);
+                    if (k === i) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current');
+                });
+            }
+            window.addEventListener('scroll', spy, { passive: true });
+            window.addEventListener('resize', spy);
+            spy();
+
+            // On a phone the open menu covers the section a link goes to: close it on a tap.
+            const menu = document.getElementById('navbarNav');
+            links.forEach(a => a.addEventListener('click', () => {
+                if (menu.classList.contains('show')) bootstrap.Collapse.getOrCreateInstance(menu).hide();
+            }));
+            const copy = document.getElementById('copy-bibtex');
+            copy.addEventListener('click', () => {
+                navigator.clipboard.writeText(document.getElementById('bibtex').textContent).then(() => {
+                    copy.textContent = 'Copied';
+                    setTimeout(() => { copy.textContent = 'Copy'; }, 1500);
+                });
+            });
+        });
+    </script>
+</body>
+</html>

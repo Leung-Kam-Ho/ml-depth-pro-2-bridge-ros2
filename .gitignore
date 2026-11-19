@@ -1,0 +1,14 @@
+.DS_Store
+*.pyc
+__pycache__/
+docs/_preview.html
+docs/review.js
+local/
+
+# Local preview clips: working material, not for publication.
+docs/assets/videos/*/scratch-*/
+docs/assets/thumbnails/*/scratch-*.jpg
+
+# Local review set: every clip and model, not for publication.
+docs/assets/videos/review*/
+docs/assets/thumbnails/review*/

@@ -1,0 +1,162 @@
+/* TwentyTwenty before/after slider, for video. */
+
+.twentytwenty-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.twentytwenty-container {
+    box-sizing: content-box;
+    position: relative;
+    overflow: hidden;
+    user-select: none;
+}
+
+.twentytwenty-container video {
+    max-width: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: block;
+}
+
+.twentytwenty-before {
+    z-index: 20;
+}
+
+.twentytwenty-after {
+    z-index: 10;
+}
+
+/* Handle/Slider */
+.twentytwenty-handle {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    margin-left: -2px;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    z-index: 40;
+    cursor: ew-resize;
+    touch-action: none;  /* a drag on it moves the handle and does not scroll the page */
+}
+
+/* Arrows */
+.twentytwenty-left-arrow,
+.twentytwenty-right-arrow {
+    width: 0;
+    height: 0;
+    border: 6px inset transparent;
+    position: absolute;
+    top: 50%;
+    margin-top: -6px;
+}
+
+.twentytwenty-left-arrow {
+    border-right: 6px solid #0b0d12;  /* dark: the knob behind it is white */
+    left: 50%;
+    margin-left: -17px;
+}
+
+.twentytwenty-right-arrow {
+    border-left: 6px solid #0b0d12;
+    right: 50%;
+    margin-right: -17px;
+}
+
+/* A wider strip to grab than the 4px line. */
+.twentytwenty-handle:after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -14px;
+    right: -14px;
+}
+
+/* Handle circle */
+.twentytwenty-handle:before {
+    content: '';
+    display: block;
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 64px;
+    height: 64px;
+    margin-top: -32px;
+    margin-left: -30px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+/* Labels */
+.twentytwenty-overlay {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 25;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.twentytwenty-before-label,
+.twentytwenty-after-label {
+    position: absolute;
+    top: 8px;
+    padding: 2px 8px;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 4px;
+    transition: opacity 0.3s;
+}
+
+.twentytwenty-before-label {
+    left: 8px;
+}
+
+.twentytwenty-after-label {
+    right: 8px;
+}
+
+/* Set by the slider when the handle passes over the label. */
+.twentytwenty-overlay .covered {
+    opacity: 0;
+}
+
+/* A narrow box (a tall clip or image on a phone) has no room for the full names beside the
+   handle, so both were hidden. There our label reads "Ours", and a long name wraps. */
+.twentytwenty-container,
+.image-slider {
+    container-type: inline-size;
+}
+@container (max-width: 280px) {
+    .twentytwenty-before-label,
+    .twentytwenty-after-label {
+        font-size: 11px;
+        max-width: calc(50% - 14px);
+        line-height: 1.25;
+    }
+    .twentytwenty-after-label { text-align: right; }
+    .twentytwenty-before-label { font-size: 0; }
+    .twentytwenty-before-label::after { content: "Ours"; font-size: 11px; }
+}
+
+/* A smaller knob on a phone. */
+@media (max-width: 575.98px) {
+    .twentytwenty-handle:before {
+        width: 40px;
+        height: 40px;
+        margin-top: -20px;
+        margin-left: -18px;
+    }
+    .twentytwenty-left-arrow { margin-left: -15px; }
+    .twentytwenty-right-arrow { margin-right: -15px; }
+}
