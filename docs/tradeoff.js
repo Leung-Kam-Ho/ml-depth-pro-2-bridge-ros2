@@ -5,6 +5,13 @@
 // The points of the trade-off chart (tradeoff_chart.js): the paper's means over Sintel and Spring.
 window.TRADEOFF = [
  {
+  "name": "DAGE",
+  "group": "multi",
+  "trainedOn": "Spring",
+  "sharpness": 0.2281,
+  "jitter": 0.01813
+ },
+ {
   "name": "DA3-NGL",
   "group": "multi",
   "trainedOn": "Spring",

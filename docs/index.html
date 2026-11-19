@@ -325,6 +325,8 @@
         .navbar .nav-link { font-size: 0.9rem; }
 
         .masthead { padding: 64px 0 32px; text-align: center; }
+        /* Short windows (e.g. a 13" laptop): less space above the title leaves more for the hero. */
+        @media (max-height: 800px) { .masthead { padding-top: 32px; } }
         .masthead h1 {
             font-size: clamp(2.6rem, 6vw, 4.6rem);
             font-weight: 800;
@@ -384,9 +386,11 @@
         .view-toggle .btn-outline-secondary:not(.active) { color: var(--ink-2); }
 
         /* As wide as fits in the window below the title (16:10), so the whole hero shows without
-           scrolling. 24px leaves a margin under it. --masthead-h is set by the script below. */
+           scrolling. 24px leaves a margin under it. --masthead-h is set by the script below.
+           At least 720 px wide (744 with the padding): on a short laptop window the fit made it
+           a thumbnail, so there the bottom of the hero goes below the fold instead. */
         .hero-wrap {
-            max-width: min(1280px, max(480px, calc((100vh - var(--masthead-h, 400px) - 24px) * 16 / 10 + 24px)));
+            max-width: min(1280px, max(744px, calc((100vh - var(--masthead-h, 400px) - 24px) * 16 / 10 + 24px)));
             margin: 0 auto;
             padding: 0 12px;
         }
