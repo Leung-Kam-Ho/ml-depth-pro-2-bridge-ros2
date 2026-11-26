@@ -46,7 +46,7 @@ The app tells you when it holds more than half of the Mac's memory.
 ```
 ./demo/run.sh PACKAGE [--resolution WxH] [--compute-units gpu|ane]
                       [--focal-px PIXELS] [--min-depth METERS] [--max-depth METERS]
-                      [--api-host HOST] [--api-port PORT]
+                      [--api-host HOST] [--api-port PORT] [--stream-port PORT]
 ```
 
 - For a package with several sizes, the window's menu lists them, read from the package itself, and
@@ -98,6 +98,48 @@ curl -X POST http://127.0.0.1:8765/api/v1/color-bar/calibrate
 The API has no authentication. Keep the default loopback binding unless you need network access; if
 you use `0.0.0.0`, anyone who can reach the port can inspect and switch cameras or recalibrate the
 color bar. Use it only on a trusted network and restrict access with your firewall.
+
+## ROS 2 / RViz
+
+The demo also streams aligned RGB and metric depth over TCP on port `8766` by default. It binds to
+the same address as the API (`--api-host`); use `0.0.0.0` when the ROS 2 computer is another device.
+The stream sends only the newest frame to one connected bridge, dropping stale frames rather than
+building latency. RGB is `rgb8`; depth is little-endian `float32` meters. The bridge publishes:
+
+| Topic | ROS 2 type | Contents |
+|---|---|---|
+| `/depthpro2/rgb/image` | `sensor_msgs/Image` | Aligned RGB image |
+| `/depthpro2/depth/image` | `sensor_msgs/Image` | Metric depth, `32FC1` |
+| `/depthpro2/camera_info` | `sensor_msgs/CameraInfo` | Focal length and centered principal point |
+| `/depthpro2/points` | `sensor_msgs/PointCloud2` | Colored XYZ points, invalid/out-of-range depths omitted |
+
+On the Mac, start the demo with the stream reachable on your network:
+
+```bash
+./demo/run.sh depthpro2-s_480x854_w4.mlpackage --focal-px 816 --api-host 0.0.0.0
+```
+
+On the ROS 2 machine, add `demo/ros2/depthpro2_bridge` to a colcon workspace and build it:
+
+```bash
+mkdir -p ~/ros2_ws/src
+ln -s /path/to/ml-depth-pro-2/demo/ros2/depthpro2_bridge ~/ros2_ws/src/
+cd ~/ros2_ws
+source /opt/ros/jazzy/setup.bash  # replace jazzy with your installed ROS 2 distro
+colcon build --packages-select depthpro2_bridge
+source install/setup.bash
+ros2 run depthpro2_bridge bridge_node --ros-args -p host:=192.168.1.20
+```
+
+Replace `192.168.1.20` with the Mac's LAN IP. If ROS 2 runs on the same Mac, use `host:=127.0.0.1`.
+Then open RViz, set **Fixed Frame** to `camera_optical_frame`, and add a **PointCloud2** display for
+`/depthpro2/points`. The bridge also accepts `port` (default `8766`), `min_depth`, `max_depth`, and
+topic-name parameters.
+
+The cloud uses the app's focal-length estimate or `--focal-px` and assumes a centered principal point
+with no lens distortion. Use known camera calibration for more accurate geometry. The stream is
+unauthenticated and contains camera imagery; expose it only on a trusted network and restrict access
+with your firewall.
 
 ## Use the exported model in your own app
 

@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>depthpro2_bridge</name>
+  <version>0.1.0</version>
+  <description>Publish Depth Pro 2 live RGB-D frames as ROS 2 images and a colored point cloud.</description>
+  <maintainer email="noreply@example.com">Depth Pro 2 demo</maintainer>
+  <license>See repository LICENSE</license>
+  <buildtool_depend>ament_python</buildtool_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

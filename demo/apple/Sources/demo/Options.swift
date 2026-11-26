@@ -19,8 +19,9 @@ struct Options {
           --focal-px PIXELS    focal length in pixels, for a camera that reports none
           --min-depth METERS   near end of the color bar
           --max-depth METERS   far end of the color bar
-          --api-host HOST      API IPv4 bind address: 127.0.0.1 (default) or 0.0.0.0
+          --api-host HOST      API/stream IPv4 bind: 127.0.0.1 (default) or 0.0.0.0
           --api-port PORT      HTTP API port (default: 8765)
+          --stream-port PORT   TCP RGB/depth stream port (default: 8766)
         """
 
     let package: URL
@@ -32,6 +33,7 @@ struct Options {
     let maxDepth: Double?
     let apiHost: String
     let apiPort: UInt16
+    let streamPort: UInt16
 
     init(arguments: [String]) throws {
         var package: URL?
@@ -42,6 +44,7 @@ struct Options {
         var maxDepth: Double?
         var apiHost = "127.0.0.1"
         var apiPort: UInt16 = 8765
+        var streamPort: UInt16 = 8766
         var rest = arguments.dropFirst()
         while let argument = rest.popFirst() {
             switch argument {
@@ -72,6 +75,11 @@ struct Options {
                     throw DemoError("--api-port takes a port from 1 to 65535")
                 }
                 apiPort = value
+            case "--stream-port":
+                guard let value = rest.popFirst().flatMap(UInt16.init), value > 0 else {
+                    throw DemoError("--stream-port takes a port from 1 to 65535")
+                }
+                streamPort = value
             default:
                 guard !argument.hasPrefix("-"), package == nil else { throw DemoError(Self.usage) }
                 package = URL(fileURLWithPath: argument)
@@ -84,10 +92,12 @@ struct Options {
         if let minDepth, let maxDepth, minDepth >= maxDepth {
             throw DemoError("--min-depth must be less than --max-depth")
         }
+        guard apiPort != streamPort else { throw DemoError("--api-port and --stream-port must be different") }
         (self.package, self.function, self.computeUnits) = (package, function, computeUnits)
         (self.focalPixels, self.minDepth, self.maxDepth) = (focalPixels, minDepth, maxDepth)
         self.apiHost = apiHost
         self.apiPort = apiPort
+        self.streamPort = streamPort
     }
 
     private static func number(after option: String, in rest: inout ArraySlice<String>) throws -> Double {

@@ -33,6 +33,17 @@ struct GPU {
         return texture
     }
 
+    func sharedTexture(_ format: MTLPixelFormat, width: Int, height: Int) throws -> MTLTexture {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: format, width: width, height: height, mipmapped: false)
+        descriptor.usage = [.shaderRead, .shaderWrite]
+        descriptor.storageMode = .shared
+        guard let texture = device.makeTexture(descriptor: descriptor) else {
+            throw DemoError("cannot allocate a shared \(width)x\(height) texture")
+        }
+        return texture
+    }
+
     func texture(
         _ buffer: CVPixelBuffer, format: MTLPixelFormat, usage: MTLTextureUsage
     ) throws -> MTLTexture {

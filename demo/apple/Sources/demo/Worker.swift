@@ -25,13 +25,18 @@ final class Worker: @unchecked Sendable {
     private let processing = NSLock()
     private let mailbox: Mailbox
     private let metrics: Metrics
+    private let frameStream: FrameStreamServer
     private let minDepth: Double?
     private let maxDepth: Double?
 
-    init(runner: ModelRunner, mailbox: Mailbox, metrics: Metrics, minDepth: Double?, maxDepth: Double?) {
+    init(
+        runner: ModelRunner, mailbox: Mailbox, metrics: Metrics, frameStream: FrameStreamServer,
+        minDepth: Double?, maxDepth: Double?
+    ) {
         runnerBox = Mutex(runner)
         self.mailbox = mailbox
         self.metrics = metrics
+        self.frameStream = frameStream
         self.minDepth = minDepth
         self.maxDepth = maxDepth
     }
@@ -102,6 +107,9 @@ final class Worker: @unchecked Sendable {
                 let range = try colorRange(following: smoother.range)
                 slot.metricScale = Float(scale)
                 slot.depthRange = SIMD2(Float(range.lowerBound), Float(range.upperBound))
+                if frameStream.hasSubscriber {
+                    frameStream.publish(inverseDepth: slot.inverseDepth, color: slot.camera, metricScale: Float(scale))
+                }
                 runner.pool.publish(slot)
                 status.withLock {
                     guard $0.generation == frame.generation else { return }

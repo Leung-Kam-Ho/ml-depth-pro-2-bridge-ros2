@@ -18,6 +18,7 @@ final class LiveApp: NSObject, NSApplicationDelegate {
     private let compiled: CompiledPackage
     private let resolutions: [Resolution]
     private var spec: ModelSpec
+    private let frameStream: FrameStreamServer
     private let worker: Worker
     private let fieldOfView: FieldOfView?
     private let mailbox = Mailbox()
@@ -57,8 +58,11 @@ final class LiveApp: NSObject, NSApplicationDelegate {
         let spec = setup.spec
         self.spec = spec
         note(String(format: "%@ loaded in %.1f s, Core ML on %@", spec.label, Date().timeIntervalSince(loadStart), options.computeUnits.label))
+        let frameStream = try FrameStreamServer(host: options.apiHost, port: options.streamPort)
+        self.frameStream = frameStream
         worker = Worker(
-            runner: setup.runner, mailbox: mailbox, metrics: metrics, minDepth: options.minDepth, maxDepth: options.maxDepth)
+            runner: setup.runner, mailbox: mailbox, metrics: metrics, frameStream: frameStream,
+            minDepth: options.minDepth, maxDepth: options.maxDepth)
         fieldOfView = options.focalPixels == nil ? try FieldOfView.beside(options.package, gpu: gpu) : nil
         if fieldOfView != nil { note("a camera that reports no focal length gets one estimated by the FoV package") }
 
@@ -123,6 +127,8 @@ final class LiveApp: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         apiServer?.start()
         note("API listening on \(options.apiHost):\(options.apiPort)")
+        frameStream.start()
+        note("RGB/depth stream listening on \(options.apiHost):\(options.streamPort)")
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
@@ -144,6 +150,7 @@ final class LiveApp: NSObject, NSApplicationDelegate {
     // Skips exit's teardown, which breaks Core ML's in-flight GPU work and logs "mutex lock failed".
     func applicationWillTerminate(_ notification: Notification) {
         apiServer?.stop()
+        frameStream.stop()
         CompiledPackage.removeAll()
         _exit(0)
     }

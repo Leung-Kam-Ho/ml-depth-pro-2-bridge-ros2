@@ -31,7 +31,7 @@ final class ResultSlot: @unchecked Sendable {
     init(gpu: GPU, spec: ModelSpec) throws {
         inverseDepth = try makeHalfSurface(width: spec.width, height: spec.height)
         inverseDepthTexture = try gpu.texture(inverseDepth, format: .r16Float, usage: .shaderRead)
-        camera = try gpu.privateTexture(.bgra8Unorm, width: spec.width, height: spec.height)
+        camera = try gpu.sharedTexture(.bgra8Unorm, width: spec.width, height: spec.height)
         let backing = MLMultiArray(
             pixelBuffer: inverseDepth, shape: [1, spec.height, spec.width].map { NSNumber(value: $0) })
         predictionOptions.outputBackings = ["inverse_depth": backing]
