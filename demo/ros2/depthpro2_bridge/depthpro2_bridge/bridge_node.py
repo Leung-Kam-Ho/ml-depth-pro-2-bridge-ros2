@@ -6,6 +6,7 @@ import queue
 import socket
 import struct
 import threading
+import time
 
 import numpy as np
 import rclpy
@@ -48,6 +49,8 @@ class DepthPro2Bridge(Node):
         self.declare_parameter("frame_id", "camera_optical_frame")
         self.declare_parameter("min_depth", 0.1)
         self.declare_parameter("max_depth", 100.0)
+        self.declare_parameter("point_stride", 3)
+        self.declare_parameter("point_rate", 10.0)
         self.declare_parameter("depth_topic", "/depthpro2/depth/image")
         self.declare_parameter("rgb_topic", "/depthpro2/rgb/image")
         self.declare_parameter("camera_info_topic", "/depthpro2/camera_info")
@@ -58,6 +61,16 @@ class DepthPro2Bridge(Node):
         self.frame_id = self.get_parameter("frame_id").value
         self.min_depth = float(self.get_parameter("min_depth").value)
         self.max_depth = float(self.get_parameter("max_depth").value)
+        self.point_stride = max(1, int(self.get_parameter("point_stride").value))
+        self.point_rate = max(0.1, float(self.get_parameter("point_rate").value))
+        self.last_point_publish = 0.0
+        # RViz's CameraInfo and PointCloud2 subscribers commonly request reliable delivery.
+        # Sensor-data QoS is best-effort and is incompatible with those subscriptions.
+        point_qos = QoSProfile(
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+        )
         self.depth_pub = self.create_publisher(
             Image, self.get_parameter("depth_topic").value, qos_profile_sensor_data
         )
@@ -65,14 +78,7 @@ class DepthPro2Bridge(Node):
             Image, self.get_parameter("rgb_topic").value, qos_profile_sensor_data
         )
         self.info_pub = self.create_publisher(
-            CameraInfo, self.get_parameter("camera_info_topic").value, qos_profile_sensor_data
-        )
-        # RViz's PointCloud2 display defaults to reliable delivery. Sensor-data QoS is best-effort
-        # and is incompatible with that subscription, so use reliable QoS for points.
-        point_qos = QoSProfile(
-            history=QoSHistoryPolicy.KEEP_LAST,
-            depth=1,
-            reliability=QoSReliabilityPolicy.RELIABLE,
+            CameraInfo, self.get_parameter("camera_info_topic").value, point_qos
         )
         self.points_pub = self.create_publisher(
             PointCloud2, self.get_parameter("points_topic").value, point_qos
@@ -183,7 +189,10 @@ class DepthPro2Bridge(Node):
         info.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
         info.p = [fx, 0.0, cx, 0.0, 0.0, fy, cy, 0.0, 0.0, 0.0, 1.0, 0.0]
         self.info_pub.publish(info)
-        self.points_pub.publish(self._point_cloud(image_header, rgb, depth, fx, fy, cx, cy))
+        now = time.monotonic()
+        if now - self.last_point_publish >= 1.0 / self.point_rate:
+            self.points_pub.publish(self._point_cloud(image_header, rgb, depth, fx, fy, cx, cy))
+            self.last_point_publish = now
 
     @staticmethod
     def _header(stamp, frame_id):
@@ -195,14 +204,22 @@ class DepthPro2Bridge(Node):
         return header
 
     def _point_cloud(self, header, rgb, depth, fx, fy, cx, cy):
-        valid = np.isfinite(depth) & (depth >= self.min_depth) & (depth <= self.max_depth) & (depth > 0)
+        stride = self.point_stride
+        sampled_depth = depth[::stride, ::stride]
+        sampled_rgb = rgb[::stride, ::stride]
+        valid = (
+            np.isfinite(sampled_depth)
+            & (sampled_depth >= self.min_depth)
+            & (sampled_depth <= self.max_depth)
+            & (sampled_depth > 0)
+        )
         rows, cols = np.nonzero(valid)
-        z = depth[rows, cols].astype(np.float32, copy=False)
+        z = sampled_depth[rows, cols].astype(np.float32, copy=False)
         points = np.empty(z.size, dtype=POINT_DTYPE)
-        points["x"] = (cols.astype(np.float32) - cx) * z / fx
-        points["y"] = (rows.astype(np.float32) - cy) * z / fy
+        points["x"] = (cols.astype(np.float32) * stride - cx) * z / fx
+        points["y"] = (rows.astype(np.float32) * stride - cy) * z / fy
         points["z"] = z
-        colors = rgb[rows, cols]
+        colors = sampled_rgb[rows, cols]
         points["r"], points["g"], points["b"] = colors[:, 0], colors[:, 1], colors[:, 2]
         points["padding"] = 0
 

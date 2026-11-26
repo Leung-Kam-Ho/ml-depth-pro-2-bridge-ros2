@@ -162,7 +162,9 @@ ros2 run depthpro2_bridge bridge_node --ros-args -p host:=192.168.1.20
 Replace `192.168.1.20` with the Mac's LAN IP. If ROS 2 runs on the same Mac, use `host:=127.0.0.1`.
 Then open RViz, set **Fixed Frame** to `camera_optical_frame`, and add a **PointCloud2** display for
 `/depthpro2/points`. The bridge also accepts `port` (default `8766`), `min_depth`, `max_depth`, and
-topic-name parameters.
+`point_stride` (default `3`, sample every third pixel in each direction), `point_rate` (default
+`10` clouds per second), and topic-name parameters. These defaults reduce RViz queue drops; lower the
+rate or increase the stride further on slower machines.
 
 The cloud uses the app's focal-length estimate or `--focal-px` and assumes a centered principal point
 with no lens distortion. Use known camera calibration for more accurate geometry. The stream is
