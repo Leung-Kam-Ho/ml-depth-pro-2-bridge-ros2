@@ -31,6 +31,7 @@ final class LiveApp: NSObject, NSApplicationDelegate {
     private let colorBar = ColorBar()
     private let picker = Picker()
     private let resolutionPicker = Picker()
+    private var apiServer: APIServer?
     private var switching: String?
     private var memoryWarned = false
     private var deviceToResume: AVCaptureDevice?
@@ -108,9 +109,20 @@ final class LiveApp: NSObject, NSApplicationDelegate {
         view.onKey = { [unowned self] in handle($0) }
         picker.onPick = { [unowned self] in use(cameras[$0]) }
         resolutionPicker.onPick = { [unowned self] in switchResolution(to: $0) }
+        apiServer = try APIServer(port: options.apiPort) { [weak self] request, respond in
+            Task { @MainActor [weak self] in
+                guard let self else {
+                    respond(APIResponse(500, json: ["error": "demo is shutting down"]))
+                    return
+                }
+                respond(self.handleAPI(request))
+            }
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        apiServer?.start()
+        note("API listening at http://127.0.0.1:\(options.apiPort)")
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
@@ -131,6 +143,7 @@ final class LiveApp: NSObject, NSApplicationDelegate {
 
     // Skips exit's teardown, which breaks Core ML's in-flight GPU work and logs "mutex lock failed".
     func applicationWillTerminate(_ notification: Notification) {
+        apiServer?.stop()
         CompiledPackage.removeAll()
         _exit(0)
     }
@@ -167,6 +180,62 @@ final class LiveApp: NSObject, NSApplicationDelegate {
             use(first)
         }
         picker.show(cameras.map(\.localizedName), selected: device.flatMap(cameras.firstIndex))
+    }
+
+    private func handleAPI(_ request: APIRequest) -> APIResponse {
+        switch request.path {
+        case "/api/v1/cameras":
+            guard request.method == "GET" else { return APIResponse(405, json: ["error": "use GET"]) }
+            let available = discovery.devices.map { camera in
+                [
+                    "id": camera.uniqueID,
+                    "name": camera.localizedName,
+                    "usable": Camera.isUsable(camera, covering: inputSize),
+                    "selected": camera.uniqueID == device?.uniqueID,
+                ] as [String: Any]
+            }
+            return APIResponse(200, json: ["cameras": available])
+
+        case "/api/v1/camera":
+            guard request.method == "PUT" else { return APIResponse(405, json: ["error": "use PUT with JSON {\"id\": \"camera-id\"}"]) }
+            guard let object = try? JSONSerialization.jsonObject(with: request.body) as? [String: Any],
+                let id = object["id"] as? String, !id.isEmpty
+            else { return APIResponse(400, json: ["error": "expected JSON {\"id\": \"camera-id\"}"]) }
+            guard let selected = discovery.devices.first(where: { $0.uniqueID == id }) else {
+                return APIResponse(404, json: ["error": "camera not found", "id": id])
+            }
+            guard Camera.isUsable(selected, covering: inputSize) else {
+                return APIResponse(422, json: ["error": Camera.requirement(covering: inputSize), "id": id])
+            }
+            guard switching == nil else { return APIResponse(409, json: ["error": "model resolution is switching"]) }
+            use(selected)
+            return APIResponse(202, json: ["selected": ["id": selected.uniqueID, "name": selected.localizedName]])
+
+        case "/api/v1/color-bar/calibrate":
+            guard request.method == "POST" else { return APIResponse(405, json: ["error": "use POST"]) }
+            guard options.minDepth == nil || options.maxDepth == nil else {
+                return APIResponse(409, json: ["error": "color bar is fixed by --min-depth and --max-depth"])
+            }
+            worker.recalibrate()
+            return APIResponse(202, json: ["status": "calibration requested", "durationSeconds": 1.5])
+
+        case "/api/v1/status":
+            guard request.method == "GET" else { return APIResponse(405, json: ["error": "use GET"]) }
+            let current = worker.currentStatus()
+            let range = current.depthRange.map { [$0.lowerBound, $0.upperBound] as [Double] } ?? []
+            return APIResponse(200, json: [
+                "model": spec.label,
+                "camera": (device.map { ["id": $0.uniqueID, "name": $0.localizedName] } as Any?) ?? NSNull(),
+                "focalLengthPx": current.focalPixels.map { $0 as Any } ?? NSNull(),
+                "focalSource": current.focalPixels.map { _ in current.focalSource.rawValue as Any } ?? NSNull(),
+                "depthRangeMeters": range,
+                "message": camera?.message as Any? ?? NSNull(),
+                "error": current.error as Any? ?? NSNull(),
+            ])
+
+        default:
+            return APIResponse(404, json: ["error": "unknown endpoint"])
+        }
     }
 
     /// Replaces the camera; the worker drops the old camera's frames.

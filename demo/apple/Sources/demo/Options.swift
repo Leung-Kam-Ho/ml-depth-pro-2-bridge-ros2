@@ -19,6 +19,7 @@ struct Options {
           --focal-px PIXELS    focal length in pixels, for a camera that reports none
           --min-depth METERS   near end of the color bar
           --max-depth METERS   far end of the color bar
+          --api-port PORT      loopback HTTP API port (default: 8765)
         """
 
     let package: URL
@@ -28,6 +29,7 @@ struct Options {
     let focalPixels: Double?
     let minDepth: Double?
     let maxDepth: Double?
+    let apiPort: UInt16
 
     init(arguments: [String]) throws {
         var package: URL?
@@ -36,6 +38,7 @@ struct Options {
         var focalPixels: Double?
         var minDepth: Double?
         var maxDepth: Double?
+        var apiPort: UInt16 = 8765
         var rest = arguments.dropFirst()
         while let argument = rest.popFirst() {
             switch argument {
@@ -56,6 +59,11 @@ struct Options {
             case "--focal-px": focalPixels = try Self.number(after: argument, in: &rest)
             case "--min-depth": minDepth = try Self.number(after: argument, in: &rest)
             case "--max-depth": maxDepth = try Self.number(after: argument, in: &rest)
+            case "--api-port":
+                guard let value = rest.popFirst().flatMap(UInt16.init), value > 0 else {
+                    throw DemoError("--api-port takes a port from 1 to 65535")
+                }
+                apiPort = value
             default:
                 guard !argument.hasPrefix("-"), package == nil else { throw DemoError(Self.usage) }
                 package = URL(fileURLWithPath: argument)
@@ -70,6 +78,7 @@ struct Options {
         }
         (self.package, self.function, self.computeUnits) = (package, function, computeUnits)
         (self.focalPixels, self.minDepth, self.maxDepth) = (focalPixels, minDepth, maxDepth)
+        self.apiPort = apiPort
     }
 
     private static func number(after option: String, in rest: inout ArraySlice<String>) throws -> Double {

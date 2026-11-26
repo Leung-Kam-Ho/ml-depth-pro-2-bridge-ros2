@@ -139,6 +139,12 @@ uv run --extra coreml python -m demo.export stream -m depthpro2-s -w 4
 ./demo/run.sh depthpro2-s_480x854_w4.mlpackage
 ```
 
+or for minecraft
+```bash
+uv run --extra coreml python -m demo.export stream -m depthpro2-s -w 4
+ ./demo/run.sh depthpro2-s_480x854_w4.mlpackage --focal-px 816
+```
+
 The [demo's README](demo/README.md) details the options, and shows how to export the model to Core ML and use it in your own app. It also has the runtime on an M4 Max MacBook Pro. For convenience, we also provide exported [Core ML models](https://huggingface.co/apple/DepthPro2-coreml/).
 
 ## Citation

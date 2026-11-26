@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ml-depth-pro-2}/demo/apple",
+            "name": "Debug demo (demo/apple)",
+            "target": "demo",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug demo (demo/apple)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ml-depth-pro-2}/demo/apple",
+            "name": "Release demo (demo/apple)",
+            "target": "demo",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release demo (demo/apple)"
+        }
+    ]
+}

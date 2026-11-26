@@ -46,6 +46,7 @@ The app tells you when it holds more than half of the Mac's memory.
 ```
 ./demo/run.sh PACKAGE [--resolution WxH] [--compute-units gpu|ane]
                       [--focal-px PIXELS] [--min-depth METERS] [--max-depth METERS]
+                      [--api-port PORT]
 ```
 
 - For a package with several sizes, the window's menu lists them, read from the package itself, and
@@ -64,6 +65,31 @@ The app tells you when it holds more than half of the Mac's memory.
 - The color bar fits the scene's depth range when a camera starts; press c to fit it again, or
   fix it with `--min-depth` and `--max-depth`.
 - Press f to estimate the focal length again, when the field-of-view package is next to the model.
+
+## Local HTTP API
+
+The app starts a small HTTP API on `127.0.0.1:8765` by default. Change the port with `--api-port`.
+It binds to loopback only; other devices on the network cannot connect. Camera selection uses the
+camera's `id` from the list, which is an AVFoundation device identifier and can change when devices
+are reconnected.
+
+```bash
+curl http://127.0.0.1:8765/api/v1/cameras
+curl http://127.0.0.1:8765/api/v1/status
+curl -X PUT http://127.0.0.1:8765/api/v1/camera \
+  -H 'Content-Type: application/json' -d '{"id":"CAMERA_ID"}'
+curl -X POST http://127.0.0.1:8765/api/v1/color-bar/calibrate
+```
+
+- `GET /api/v1/cameras` lists all discovered cameras. Each item has `id`, `name`, `usable` (whether
+  it supports the current model input at 30 fps), and `selected`.
+- `PUT /api/v1/camera` selects a usable camera by `{"id":"..."}`. It returns `202` when accepted,
+  `404` for an unknown camera, and `422` when the camera cannot provide the required format.
+- `POST /api/v1/color-bar/calibrate` requests a fresh 1.5-second scene calibration, equivalent to
+  pressing `c`. It returns `409` if both `--min-depth` and `--max-depth` fixed the color range.
+- `GET /api/v1/status` returns the active camera, model, focal length, and current depth range.
+
+The API is intended for local scripts and tools. It has no authentication; keep it bound to loopback.
 
 ## Use the exported model in your own app
 
