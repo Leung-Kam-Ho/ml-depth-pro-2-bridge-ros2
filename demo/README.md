@@ -37,6 +37,34 @@ they stay in range (`--fp16-peak`). The package's metadata says how.
 which takes the 16:9 frames of the demo's cameras. Put it next to the depth package: for a camera
 that reports no focal length, the app estimates it from the camera's frames.
 
+### Export for a camera with unknown focal length
+
+Export the FOV package once, then export either the S or B depth model. Run these commands from the
+repository root; keep the FOV package beside the depth package. Do not pass `--focal-px` when you
+want the app to estimate it.
+
+```bash
+uv run --extra coreml python -m demo.export fov
+
+# Choose one depth model:
+uv run --extra coreml python -m demo.export stream -m depthpro2-s -w 4
+# or:
+uv run --extra coreml python -m demo.export stream -m depthpro2-b -w 4
+```
+
+Then launch the package you exported, for example:
+
+```bash
+./demo/run.sh depthpro2-s_480x854_w4.mlpackage
+# or:
+./demo/run.sh depthpro2-b_480x854_w4.mlpackage
+```
+
+The demo finds `depthpro2-fov_512x896.mlpackage` beside the depth model and estimates focal length
+from the live camera. The estimate uses the first 16 usable frames; until it is ready, depth output
+may pause while the app gathers frames. If the FOV package is missing or in another directory, the
+demo cannot estimate focal length for cameras that do not report one.
+
 ## App
 
 Memory grows quickly with the size: S needs about 1.5 GB at 854x480 and about 5 GB at 1280x720, L about
