@@ -22,7 +22,7 @@ struct APIResponse: Sendable {
     }
 }
 
-/// A small HTTP/1.1 server explicitly bound to IPv4 loopback.
+/// A small HTTP/1.1 server bound to the configured IPv4 address.
 final class APIServer: @unchecked Sendable {
     typealias Handler = @Sendable (APIRequest, @escaping @Sendable (APIResponse) -> Void) -> Void
 
@@ -32,7 +32,7 @@ final class APIServer: @unchecked Sendable {
     private let lock = NSLock()
     private var stopped = false
 
-    init(port: UInt16, handler: @escaping Handler) throws {
+    init(host: String, port: UInt16, handler: @escaping Handler) throws {
         self.handler = handler
         listener = Darwin.socket(AF_INET, SOCK_STREAM, 0)
         guard listener >= 0 else { throw Self.socketError("create API socket") }
@@ -41,14 +41,17 @@ final class APIServer: @unchecked Sendable {
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
         address.sin_port = port.bigEndian
-        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        guard inet_pton(AF_INET, host, &address.sin_addr) == 1 else {
+            Darwin.close(listener)
+            throw DemoError("invalid API IPv4 bind address: \(host)")
+        }
         let bound = withUnsafePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                 Darwin.bind(listener, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
             }
         }
         guard bound == 0 else {
-            let error = Self.socketError("bind API to 127.0.0.1:\(port)")
+            let error = Self.socketError("bind API to \(host):\(port)")
             Darwin.close(listener)
             throw error
         }

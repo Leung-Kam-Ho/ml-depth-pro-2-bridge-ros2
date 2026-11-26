@@ -46,7 +46,7 @@ The app tells you when it holds more than half of the Mac's memory.
 ```
 ./demo/run.sh PACKAGE [--resolution WxH] [--compute-units gpu|ane]
                       [--focal-px PIXELS] [--min-depth METERS] [--max-depth METERS]
-                      [--api-port PORT]
+                      [--api-host HOST] [--api-port PORT]
 ```
 
 - For a package with several sizes, the window's menu lists them, read from the package itself, and
@@ -69,9 +69,15 @@ The app tells you when it holds more than half of the Mac's memory.
 ## Local HTTP API
 
 The app starts a small HTTP API on `127.0.0.1:8765` by default. Change the port with `--api-port`.
-It binds to loopback only; other devices on the network cannot connect. Camera selection uses the
-camera's `id` from the list, which is an AVFoundation device identifier and can change when devices
-are reconnected.
+To accept connections on all IPv4 interfaces, pass `--api-host 0.0.0.0`:
+
+```bash
+./demo/run.sh depthpro2-s_480x854_w4.mlpackage --focal-px 816 --api-host 0.0.0.0
+```
+
+From another device, connect to the Mac's LAN IP (not `0.0.0.0`), for example
+`http://192.168.1.20:8765/api/v1/cameras`. Camera selection uses the camera's `id` from the list,
+which is an AVFoundation device identifier and can change when devices are reconnected.
 
 ```bash
 curl http://127.0.0.1:8765/api/v1/cameras
@@ -89,7 +95,9 @@ curl -X POST http://127.0.0.1:8765/api/v1/color-bar/calibrate
   pressing `c`. It returns `409` if both `--min-depth` and `--max-depth` fixed the color range.
 - `GET /api/v1/status` returns the active camera, model, focal length, and current depth range.
 
-The API is intended for local scripts and tools. It has no authentication; keep it bound to loopback.
+The API has no authentication. Keep the default loopback binding unless you need network access; if
+you use `0.0.0.0`, anyone who can reach the port can inspect and switch cameras or recalibrate the
+color bar. Use it only on a trusted network and restrict access with your firewall.
 
 ## Use the exported model in your own app
 

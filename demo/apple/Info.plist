@@ -11,6 +11,6 @@
     <key>NSCameraUsageDescription</key>
     <string>The Depth Pro 2 demo estimates depth from the camera feed.</string>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>The Depth Pro 2 demo exposes its camera and color-bar controls to local tools on this Mac.</string>
+    <string>The Depth Pro 2 demo can expose camera and color-bar controls to local tools when configured.</string>
 </dict>
 </plist>

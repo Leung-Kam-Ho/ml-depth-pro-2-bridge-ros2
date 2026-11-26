@@ -109,7 +109,7 @@ final class LiveApp: NSObject, NSApplicationDelegate {
         view.onKey = { [unowned self] in handle($0) }
         picker.onPick = { [unowned self] in use(cameras[$0]) }
         resolutionPicker.onPick = { [unowned self] in switchResolution(to: $0) }
-        apiServer = try APIServer(port: options.apiPort) { [weak self] request, respond in
+        apiServer = try APIServer(host: options.apiHost, port: options.apiPort) { [weak self] request, respond in
             Task { @MainActor [weak self] in
                 guard let self else {
                     respond(APIResponse(500, json: ["error": "demo is shutting down"]))
@@ -122,7 +122,7 @@ final class LiveApp: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         apiServer?.start()
-        note("API listening at http://127.0.0.1:\(options.apiPort)")
+        note("API listening on \(options.apiHost):\(options.apiPort)")
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
