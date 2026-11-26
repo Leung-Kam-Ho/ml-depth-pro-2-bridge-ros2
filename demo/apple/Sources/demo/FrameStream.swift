@@ -75,9 +75,11 @@ final class FrameStreamServer: @unchecked Sendable {
     }
 
     /// Called only when a bridge is connected; replacing the pending frame drops stale frames.
-    func publish(inverseDepth: CVPixelBuffer, color: MTLTexture, metricScale: Float) {
+    func publish(inverseDepth: CVPixelBuffer, color: MTLTexture, metricScale: Float, captureUnixTime: Double) {
         guard hasSubscriber,
-            let packet = Self.packet(inverseDepth: inverseDepth, color: color, metricScale: metricScale)
+            let packet = Self.packet(
+                inverseDepth: inverseDepth, color: color, metricScale: metricScale,
+                captureUnixTime: captureUnixTime)
         else { return }
         condition.lock()
         latestFrame = packet
@@ -131,7 +133,9 @@ final class FrameStreamServer: @unchecked Sendable {
         }
     }
 
-    private static func packet(inverseDepth: CVPixelBuffer, color: MTLTexture, metricScale: Float) -> Data? {
+    private static func packet(
+        inverseDepth: CVPixelBuffer, color: MTLTexture, metricScale: Float, captureUnixTime: Double
+    ) -> Data? {
         let width = CVPixelBufferGetWidth(inverseDepth)
         let height = CVPixelBufferGetHeight(inverseDepth)
         guard color.width == width, color.height == height,
@@ -173,6 +177,7 @@ final class FrameStreamServer: @unchecked Sendable {
             "width": width, "height": height,
             "fx": fx, "fy": fx,
             "cx": Double(width - 1) / 2, "cy": Double(height - 1) / 2,
+            "stamp_unix": captureUnixTime,
             "frame_id": "camera_optical_frame",
             "rgb_encoding": "rgb8", "depth_encoding": "32FC1-le",
         ]

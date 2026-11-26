@@ -139,7 +139,7 @@ building latency. RGB is `rgb8`; depth is little-endian `float32` meters. The br
 | `/depthpro2/rgb/image` | `sensor_msgs/Image` | Aligned RGB image |
 | `/depthpro2/depth/image` | `sensor_msgs/Image` | Metric depth, `32FC1` |
 | `/depthpro2/camera_info` | `sensor_msgs/CameraInfo` | Focal length and centered principal point |
-| `/depthpro2/points` | `sensor_msgs/PointCloud2` | Colored XYZ points, invalid/out-of-range depths omitted |
+| `/depthpro2/points` | `sensor_msgs/PointCloud2` | Colored XYZ points plus intensity/ring/time fields; invalid/out-of-range depths omitted |
 
 On the Mac, start the demo with the stream reachable on your network:
 
@@ -162,14 +162,31 @@ ros2 run depthpro2_bridge bridge_node --ros-args -p host:=192.168.1.20
 Replace `192.168.1.20` with the Mac's LAN IP. If ROS 2 runs on the same Mac, use `host:=127.0.0.1`.
 Then open RViz, set **Fixed Frame** to `camera_optical_frame`, and add a **PointCloud2** display for
 `/depthpro2/points`. The bridge also accepts `port` (default `8766`), `min_depth`, `max_depth`, and
-`point_stride` (default `3`, sample every third pixel in each direction), `point_rate` (default
-`10` clouds per second), and topic-name parameters. These defaults reduce RViz queue drops; lower the
-rate or increase the stride further on slower machines.
+`point_stride` (default `6`, sample every sixth pixel in each direction), `point_rate` (default
+`5` clouds per second), and topic-name parameters. These defaults reduce Point-LIO/RViz load; lower
+the rate or increase the stride further on slower machines. For a denser cloud, lower the stride or
+raise the rate.
 
 The cloud uses the app's focal-length estimate or `--focal-px` and assumes a centered principal point
 with no lens distortion. Use known camera calibration for more accurate geometry. The stream is
 unauthenticated and contains camera imagery; expose it only on a trusted network and restrict access
 with your firewall.
+
+### Experimental Point-LIO input
+
+The PointCloud2 includes the field names/types used by the `lidar_type: 5` Point-LIO parser:
+`intensity` (`float32`), `ring` (`uint16`), and `time` (`float32`, seconds), in addition to XYZ.
+These are compatibility proxies, not LiDAR measurements: intensity is RGB luminance, ring is the
+sampled image row, and time is zero for every point (the frame is treated as instantaneous). For a
+480-pixel-high model with the default stride of 6, the pseudo ring count is 80. Point-LIO can parse
+this cloud, but zero per-point time means it cannot deskew motion within a frame; this is only an
+experimental low-motion setup, not equivalent to a real LiDAR.
+
+Configure Point-LIO to subscribe to `/depthpro2/points`, use its `lidar_type: 5` PointCloud2 path,
+and set `timestamp_unit: 0` (seconds). Synchronize the Mac and ROS computer clocks (for example with
+NTP), since the cloud header uses the Mac capture time. You also need a synchronized IMU and the
+correct camera-to-IMU extrinsics. The cloud is in `camera_optical_frame` (X right, Y down, Z forward);
+do not leave the extrinsic as identity unless those axes actually match the IMU body frame.
 
 ## Use the exported model in your own app
 

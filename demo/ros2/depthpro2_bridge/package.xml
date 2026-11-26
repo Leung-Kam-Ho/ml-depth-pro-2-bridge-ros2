@@ -6,6 +6,7 @@
   <maintainer email="noreply@example.com">Depth Pro 2 demo</maintainer>
   <license>See repository LICENSE</license>
   <buildtool_depend>ament_python</buildtool_depend>
+  <exec_depend>builtin_interfaces</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>

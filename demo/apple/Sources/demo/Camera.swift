@@ -18,6 +18,7 @@ struct CameraFrame: @unchecked Sendable {
     let generation: Int
     let image: CVPixelBuffer
     let captureTime: Double
+    let captureUnixTime: Double
     let focalPixels: Double
     let focalSource: FocalSource
 }
@@ -201,8 +202,8 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unc
         let captureTime = hostTime(sampleBuffer)
         let dropped = mailbox.putDroppingUnread(
             CameraFrame(
-                generation: generation, image: image, captureTime: captureTime, focalPixels: focalPixels,
-                focalSource: focalSource))
+                generation: generation, image: image, captureTime: captureTime,
+                captureUnixTime: Date().timeIntervalSince1970, focalPixels: focalPixels, focalSource: focalSource))
         metrics.camera(at: captureTime, dropped: dropped)
         lockedMessage.withLock { $0 = nil }
     }

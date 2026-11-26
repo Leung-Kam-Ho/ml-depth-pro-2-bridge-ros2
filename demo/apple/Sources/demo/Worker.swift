@@ -108,7 +108,9 @@ final class Worker: @unchecked Sendable {
                 slot.metricScale = Float(scale)
                 slot.depthRange = SIMD2(Float(range.lowerBound), Float(range.upperBound))
                 if frameStream.hasSubscriber {
-                    frameStream.publish(inverseDepth: slot.inverseDepth, color: slot.camera, metricScale: Float(scale))
+                    frameStream.publish(
+                        inverseDepth: slot.inverseDepth, color: slot.camera,
+                        metricScale: Float(scale), captureUnixTime: frame.captureUnixTime)
                 }
                 runner.pool.publish(slot)
                 status.withLock {

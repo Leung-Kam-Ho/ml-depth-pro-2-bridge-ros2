@@ -10,6 +10,7 @@ import time
 
 import numpy as np
 import rclpy
+from builtin_interfaces.msg import Time
 from rclpy.node import Node
 from rclpy.qos import (
     QoSHistoryPolicy,
@@ -23,10 +24,10 @@ from sensor_msgs.msg import CameraInfo, Image, PointCloud2, PointField
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 POINT_DTYPE = np.dtype(
     {
-        "names": ["x", "y", "z", "r", "g", "b", "padding"],
-        "formats": ["<f4", "<f4", "<f4", "u1", "u1", "u1", "u1"],
-        "offsets": [0, 4, 8, 12, 13, 14, 15],
-        "itemsize": 16,
+        "names": ["x", "y", "z", "intensity", "ring", "time", "r", "g", "b", "padding"],
+        "formats": ["<f4", "<f4", "<f4", "<f4", "<u2", "<f4", "u1", "u1", "u1", "u1"],
+        "offsets": [0, 4, 8, 12, 16, 20, 24, 25, 26, 27],
+        "itemsize": 32,
     }
 )
 
@@ -49,8 +50,8 @@ class DepthPro2Bridge(Node):
         self.declare_parameter("frame_id", "camera_optical_frame")
         self.declare_parameter("min_depth", 0.1)
         self.declare_parameter("max_depth", 100.0)
-        self.declare_parameter("point_stride", 3)
-        self.declare_parameter("point_rate", 10.0)
+        self.declare_parameter("point_stride", 6)
+        self.declare_parameter("point_rate", 5.0)
         self.declare_parameter("depth_topic", "/depthpro2/depth/image")
         self.declare_parameter("rgb_topic", "/depthpro2/rgb/image")
         self.declare_parameter("camera_info_topic", "/depthpro2/camera_info")
@@ -155,7 +156,7 @@ class DepthPro2Bridge(Node):
             self.get_logger().warning("Invalid camera intrinsics in frame; dropping it")
             return
 
-        stamp = self.get_clock().now().to_msg()
+        stamp = self._stamp_from_unix(header.get("stamp_unix"))
         frame_id = self.frame_id or header.get("frame_id", "camera_optical_frame")
         image_header = self._header(stamp, frame_id)
 
@@ -203,6 +204,15 @@ class DepthPro2Bridge(Node):
         header.frame_id = frame_id
         return header
 
+    def _stamp_from_unix(self, stamp_unix):
+        if stamp_unix is None or not np.isfinite(stamp_unix) or stamp_unix <= 0:
+            return self.get_clock().now().to_msg()
+        nanoseconds = round(float(stamp_unix) * 1_000_000_000)
+        stamp = Time()
+        stamp.sec = nanoseconds // 1_000_000_000
+        stamp.nanosec = nanoseconds % 1_000_000_000
+        return stamp
+
     def _point_cloud(self, header, rgb, depth, fx, fy, cx, cy):
         stride = self.point_stride
         sampled_depth = depth[::stride, ::stride]
@@ -220,6 +230,16 @@ class DepthPro2Bridge(Node):
         points["y"] = (rows.astype(np.float32) * stride - cy) * z / fy
         points["z"] = z
         colors = sampled_rgb[rows, cols]
+        # Point-LIO lidar_type=5 expects these fields. They are camera-derived proxies, not
+        # physical LiDAR measurements: image rows act as pseudo-rings, luminance as intensity,
+        # and all pixels are treated as one instantaneous frame (zero per-point offset).
+        points["intensity"] = (
+            0.299 * colors[:, 0].astype(np.float32)
+            + 0.587 * colors[:, 1].astype(np.float32)
+            + 0.114 * colors[:, 2].astype(np.float32)
+        )
+        points["ring"] = rows.astype(np.uint16)
+        points["time"] = 0.0
         points["r"], points["g"], points["b"] = colors[:, 0], colors[:, 1], colors[:, 2]
         points["padding"] = 0
 
@@ -231,9 +251,12 @@ class DepthPro2Bridge(Node):
             PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
             PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
             PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
-            PointField(name="r", offset=12, datatype=PointField.UINT8, count=1),
-            PointField(name="g", offset=13, datatype=PointField.UINT8, count=1),
-            PointField(name="b", offset=14, datatype=PointField.UINT8, count=1),
+            PointField(name="intensity", offset=12, datatype=PointField.FLOAT32, count=1),
+            PointField(name="ring", offset=16, datatype=PointField.UINT16, count=1),
+            PointField(name="time", offset=20, datatype=PointField.FLOAT32, count=1),
+            PointField(name="r", offset=24, datatype=PointField.UINT8, count=1),
+            PointField(name="g", offset=25, datatype=PointField.UINT8, count=1),
+            PointField(name="b", offset=26, datatype=PointField.UINT8, count=1),
         ]
         cloud.is_bigendian = False
         cloud.point_step = POINT_DTYPE.itemsize
