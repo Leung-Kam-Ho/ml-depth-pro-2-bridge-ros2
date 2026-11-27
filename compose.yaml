@@ -27,6 +27,7 @@ x-gui-config: &gui-config
     - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
     - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
     - AUTOSTART=${AUTOSTART:-true}
+    - OMP_WAIT_POLICY=passive
   volumes:
     - .:/app
     - /app/.venv
@@ -45,11 +46,12 @@ services:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
       - AUTOSTART=${AUTOSTART:-true}
+      - OMP_WAIT_POLICY=passive
   
   # -- Wheeltec H30 mini IMU --
-  imu:
+  backend:
     <<: *base-config
-    container_name: imu_node
+    container_name: backend_node
     command: >
       bash -c " ${IMU_TCP_DEVICE} & 
       sleep 2; 

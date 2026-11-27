@@ -55,6 +55,7 @@ class DepthPro2Bridge(Node):
         self.declare_parameter("max_depth", 100.0)
         self.declare_parameter("point_stride", 6)
         self.declare_parameter("point_rate", 15.0)
+        self.declare_parameter("image_rate", 0.0)
         self.declare_parameter("depth_topic", "/depthpro2/depth/image")
         self.declare_parameter("rgb_topic", "/depthpro2/rgb/image")
         self.declare_parameter("camera_info_topic", "/depthpro2/camera_info")
@@ -67,8 +68,12 @@ class DepthPro2Bridge(Node):
         self.min_depth = float(self.get_parameter("min_depth").value)
         self.max_depth = float(self.get_parameter("max_depth").value)
         self.point_stride = max(1, int(self.get_parameter("point_stride").value))
-        self.point_rate = max(0.1, float(self.get_parameter("point_rate").value))
+        self.point_rate = max(0.0, float(self.get_parameter("point_rate").value))
         self.last_point_publish = 0.0
+        # 0 means publish every frame. A small value (e.g. 5 Hz) keeps RGB-D
+        # odometry from saturating the CPU when the demo streams many frames/s.
+        self.image_rate = float(self.get_parameter("image_rate").value)
+        self.last_image_publish = 0.0
         # RViz's CameraInfo and PointCloud2 subscribers commonly request reliable delivery.
         # Sensor-data QoS is best-effort and is incompatible with those subscriptions.
         point_qos = QoSProfile(
@@ -162,45 +167,60 @@ class DepthPro2Bridge(Node):
             self.get_logger().warning("Invalid camera intrinsics in frame; dropping it")
             return
 
+        now = time.monotonic()
+        publish_image = (
+            self.image_rate <= 0
+            or now - self.last_image_publish >= 1.0 / self.image_rate
+        )
+        publish_points = (
+            self.point_rate <= 0
+            or now - self.last_point_publish >= 1.0 / self.point_rate
+        )
+        if not (publish_image or publish_points):
+            return
+
         stamp = self._stamp_from_unix(header.get("stamp_unix"))
         frame_id = self.frame_id or header.get("frame_id", "camera_optical_frame")
         image_header = self._header(stamp, frame_id)
 
-        depth_msg = Image()
-        depth_msg.header = image_header
-        depth_msg.height = height
-        depth_msg.width = width
-        depth_msg.encoding = "32FC1"
-        depth_msg.is_bigendian = 0
-        depth_msg.step = width * 4
-        depth_msg.data = np.asarray(depth, dtype="<f4").tobytes()
-        self.depth_pub.publish(depth_msg)
+        if publish_image:
+            self.last_image_publish = now
 
-        rgb_msg = Image()
-        rgb_msg.header = image_header
-        rgb_msg.height = height
-        rgb_msg.width = width
-        rgb_msg.encoding = "rgb8"
-        rgb_msg.is_bigendian = 0
-        rgb_msg.step = width * 3
-        rgb_msg.data = rgb.tobytes()
-        self.rgb_pub.publish(rgb_msg)
+            depth_msg = Image()
+            depth_msg.header = image_header
+            depth_msg.height = height
+            depth_msg.width = width
+            depth_msg.encoding = "32FC1"
+            depth_msg.is_bigendian = 0
+            depth_msg.step = width * 4
+            depth_msg.data = np.asarray(depth, dtype="<f4").tobytes()
+            self.depth_pub.publish(depth_msg)
 
-        info = CameraInfo()
-        info.header = image_header
-        info.height = height
-        info.width = width
-        info.distortion_model = "plumb_bob"
-        info.d = [0.0] * 5
-        info.k = [fx, 0.0, cx, 0.0, fy, cy, 0.0, 0.0, 1.0]
-        info.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-        info.p = [fx, 0.0, cx, 0.0, 0.0, fy, cy, 0.0, 0.0, 0.0, 1.0, 0.0]
-        self.info_pub.publish(info)
-        now = time.monotonic()
-        if now - self.last_point_publish >= 1.0 / self.point_rate:
+            rgb_msg = Image()
+            rgb_msg.header = image_header
+            rgb_msg.height = height
+            rgb_msg.width = width
+            rgb_msg.encoding = "rgb8"
+            rgb_msg.is_bigendian = 0
+            rgb_msg.step = width * 3
+            rgb_msg.data = rgb.tobytes()
+            self.rgb_pub.publish(rgb_msg)
+
+            info = CameraInfo()
+            info.header = image_header
+            info.height = height
+            info.width = width
+            info.distortion_model = "plumb_bob"
+            info.d = [0.0] * 5
+            info.k = [fx, 0.0, cx, 0.0, fy, cy, 0.0, 0.0, 1.0]
+            info.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+            info.p = [fx, 0.0, cx, 0.0, 0.0, fy, cy, 0.0, 0.0, 0.0, 1.0, 0.0]
+            self.info_pub.publish(info)
+
+        if publish_points:
+            self.last_point_publish = now
             point_header = self._header(stamp, self.point_frame_id)
             self.points_pub.publish(self._point_cloud(point_header, rgb, depth, fx, fy, cx, cy))
-            self.last_point_publish = now
 
     @staticmethod
     def _header(stamp, frame_id):

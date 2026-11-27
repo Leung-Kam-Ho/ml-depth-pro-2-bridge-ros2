@@ -104,7 +104,7 @@ rm -f "$HOME/.config/autostart"/{point_lio_depthpro2,slam_gmapping,pointcloud_to
 cat << EOF > "$HOME/.config/autostart/depthpro2.desktop"
 [Desktop Entry]
 Type=Application
-Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch depthpro2_bridge depthpro2.launch.py use_sim_time:=false; exec bash"
+Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch depthpro2_bridge depthpro2.launch.py use_sim_time:=false image_rate:=8.0 point_rate:=5.0; exec bash"
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
@@ -112,10 +112,15 @@ Name=Depth Pro 2 ROS 2 Bridge
 Comment=Start the Depth Pro 2 RGB-D stream bridge on startup
 EOF
 
+# Tuning: images are capped at 8 Hz and point clouds at 5 Hz. The odometry
+# parameters are kept conservative: if Odom/ImageDecimation or Kp/MaxFeatures
+# are too aggressive, rgbd_odometry stops publishing /odom and odom_info, and
+# RTAB-Map then reports "Did not receive data since 5 seconds". If only the VNC
+# view is slow, set rtabmapviz:=false and watch /map with ros2 topic hz.
 cat << EOF > "$HOME/.config/autostart/rtabmap_depthpro2.desktop"
 [Desktop Entry]
 Type=Application
-Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch rtabmap_launch rtabmap.launch.py rtabmap_args:=--delete_db_on_start rgb_topic:=/depthpro2/rgb/image depth_topic:=/depthpro2/depth/image camera_info_topic:=/depthpro2/camera_info frame_id:=base_footprint odom_topic:=/odom vo_frame_id:=odom map_topic:=/map approx_sync:=true qos:=2 queue_size:=20 rtabmapviz:=true rviz:=false use_sim_time:=false; exec bash"
+Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch rtabmap_launch rtabmap.launch.py rtabmap_args:='--delete_db_on_start --Rtabmap/DetectionRate 1 --Kp/MaxFeatures 300' rgb_topic:=/depthpro2/rgb/image depth_topic:=/depthpro2/depth/image camera_info_topic:=/depthpro2/camera_info frame_id:=base_footprint odom_topic:=/odom vo_frame_id:=odom map_topic:=/map approx_sync:=true approx_sync_max_interval:=0.5 qos:=2 queue_size:=20 topic_queue_size:=10 odom_args:='--Odom/ImageDecimation 2 --Kp/MaxFeatures 300' rtabmapviz:=true rviz:=false use_sim_time:=false; exec bash"
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true

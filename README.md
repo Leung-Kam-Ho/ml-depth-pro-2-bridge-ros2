@@ -159,7 +159,7 @@ Or build images individually:
 
 ```bash
 # Headless backend (control + sensors + nav)
-docker compose build imu
+docker compose build backend
 
 # RViz2 GUI (noVNC accessible)
 docker compose build gui

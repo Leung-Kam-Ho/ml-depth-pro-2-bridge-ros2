@@ -60,13 +60,23 @@ def generate_launch_description():
     )
     point_stride_arg = DeclareLaunchArgument(
         "point_stride",
-        default_value="8",
+        default_value="12",
         description="Sample every Nth pixel in each direction when building the cloud.",
     )
     point_rate_arg = DeclareLaunchArgument(
         "point_rate",
-        default_value="10.0",
-        description="Maximum point-cloud publish rate in Hz.",
+        default_value="30.0",
+        description=(
+            "Maximum point-cloud publish rate in Hz. Set 0 to publish every frame."
+        ),
+    )
+    image_rate_arg = DeclareLaunchArgument(
+        "image_rate",
+        default_value="5.0",
+        description=(
+            "Maximum RGB/depth/camera-info publish rate in Hz. Set 0 to publish "
+            "every streamed frame. Lower this if RTAB-Map odometry lags."
+        ),
     )
     use_sim_time_arg = DeclareLaunchArgument(
         "use_sim_time",
@@ -116,6 +126,9 @@ def generate_launch_description():
                 ),
                 "point_rate": ParameterValue(
                     LaunchConfiguration("point_rate"), value_type=float
+                ),
+                "image_rate": ParameterValue(
+                    LaunchConfiguration("image_rate"), value_type=float
                 ),
             }
         ],
@@ -185,6 +198,7 @@ def generate_launch_description():
         max_depth_arg,
         point_stride_arg,
         point_rate_arg,
+        image_rate_arg,
         use_sim_time_arg,
         publish_base_tf_arg,
         publish_odom_tf_arg,
