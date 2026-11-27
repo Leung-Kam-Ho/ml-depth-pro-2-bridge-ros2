@@ -97,7 +97,7 @@ if [ "$AUTOSTART_LOWER" != "false" ]; then
 # The container filesystem survives restarts, so remove entries written by older
 # configurations before installing the current Depth Pro 2 + RTAB-Map stack.
 mkdir -p "$HOME/.config/autostart"
-rm -f "$HOME/.config/autostart"/{point_lio_depthpro2,slam_gmapping,pointcloud_to_laserscan,l2_unilidar_slam_rviz,l2_unilidar_node,navigation}.desktop
+rm -f "$HOME/.config/autostart"/{point_lio_depthpro2,slam_gmapping,pointcloud_to_laserscan,l2_unilidar_slam_rviz,l2_unilidar_node,navigation,track_motion}.desktop
 
 # Add autostart for the Depth Pro 2 bridge
 
@@ -117,6 +117,17 @@ EOF
 # are too aggressive, rgbd_odometry stops publishing /odom and odom_info, and
 # RTAB-Map then reports "Did not receive data since 5 seconds". If only the VNC
 # view is slow, set rtabmapviz:=false and watch /map with ros2 topic hz.
+cat << EOF > "$HOME/.config/autostart/track_motion.desktop"
+[Desktop Entry]
+Type=Application
+Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 run depthpro2_bridge track_motion; exec bash"
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=Depth Pro 2 Motion Tracker
+Comment=Log linear displacement and yaw from /odom
+EOF
+
 cat << EOF > "$HOME/.config/autostart/rtabmap_depthpro2.desktop"
 [Desktop Entry]
 Type=Application
@@ -143,7 +154,7 @@ else
     echo "* Autostart disabled: removing stale ROS2 desktop launch entries"
     # The container filesystem survives a restart, so entries written by an
     # earlier run must be removed explicitly instead of simply not recreated.
-    rm -f "$HOME/.config/autostart"/{depthpro2,rtabmap_depthpro2,point_lio_depthpro2,slam_gmapping,pointcloud_to_laserscan,l2_unilidar_slam_rviz,l2_unilidar_node,navigation}.desktop
+    rm -f "$HOME/.config/autostart"/{depthpro2,track_motion,rtabmap_depthpro2,point_lio_depthpro2,slam_gmapping,pointcloud_to_laserscan,l2_unilidar_slam_rviz,l2_unilidar_node,navigation}.desktop
 fi
 
 chown -R "$USER:$USER" "$HOME/.config"
