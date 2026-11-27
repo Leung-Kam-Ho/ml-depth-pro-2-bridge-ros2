@@ -23,6 +23,7 @@ setup(
         "console_scripts": [
             "bridge_node = depthpro2_bridge.bridge_node:main",
             "track_motion = depthpro2_bridge.track_motion:main",
+            "rtabmap_autosave = depthpro2_bridge.rtabmap_autosave:main",
         ]
     },
 )

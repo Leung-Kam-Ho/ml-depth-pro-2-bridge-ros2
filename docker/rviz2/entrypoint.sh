@@ -116,7 +116,9 @@ EOF
 # parameters are kept conservative: if Odom/ImageDecimation or Kp/MaxFeatures
 # are too aggressive, rgbd_odometry stops publishing /odom and odom_info, and
 # RTAB-Map then reports "Did not receive data since 5 seconds". If only the VNC
-# view is slow, set rtabmapviz:=false and watch /map with ros2 topic hz.
+# view is slow, set rtabmapviz:=false in rtabmap_autosave.py and watch /map with
+# ros2 topic hz. Ctrl+C in the RTAB-Map terminal exports PLY+PCD to /app/maps
+# (the host's ./maps directory), once per launch.
 cat << EOF > "$HOME/.config/autostart/track_motion.desktop"
 [Desktop Entry]
 Type=Application
@@ -131,7 +133,7 @@ EOF
 cat << EOF > "$HOME/.config/autostart/rtabmap_depthpro2.desktop"
 [Desktop Entry]
 Type=Application
-Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch rtabmap_launch rtabmap.launch.py rtabmap_args:='--delete_db_on_start --Rtabmap/DetectionRate 1 --Kp/MaxFeatures 300' rgb_topic:=/depthpro2/rgb/image depth_topic:=/depthpro2/depth/image camera_info_topic:=/depthpro2/camera_info frame_id:=base_footprint odom_topic:=/odom vo_frame_id:=odom map_topic:=/map approx_sync:=true approx_sync_max_interval:=0.5 qos:=2 queue_size:=20 topic_queue_size:=10 odom_args:='--Odom/ImageDecimation 2 --Kp/MaxFeatures 300' rtabmapviz:=true rviz:=false use_sim_time:=false; exec bash"
+Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 run depthpro2_bridge rtabmap_autosave; exec bash"
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
