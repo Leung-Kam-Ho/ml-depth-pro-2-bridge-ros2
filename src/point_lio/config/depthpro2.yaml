@@ -4,9 +4,9 @@
             lid_topic: "/depthpro2/points"
             imu_topic: "/imu_data_ros"
             con_frame: false # true: if you need to combine several LiDAR frames into one
-            con_frame_num: 1 # the number of frames combined
+            con_frame_num: 10 # the number of frames combined
             cut_frame: false # true: if you need to cut one LiDAR frame into several subframes
-            cut_frame_time_interval: 0.1 # should be integral fraction of 1 / LiDAR frequency
+            cut_frame_time_interval: 0.001 # should be integral fraction of 1 / LiDAR frequency
             # The code reads "time_lag_imu_to_lidar" (the old "time_diff_lidar_to_imu" key was
             # silently ignored). Point-LIO applies: imu_stamp_corrected = imu_stamp - this_value.
             # Therefore, if IMU stamps run EARLY by d seconds relative to camera stamps,
@@ -16,7 +16,7 @@
 
         preprocess:
             lidar_type: 5
-            scan_line: 80 # unused by the lidar_type 5 parser; pseudo-rings come from the bridge
+            scan_line: 40 # unused by the lidar_type 5 parser; pseudo-rings come from the bridge
             timestamp_unit: 0           # the bridge "time" field is in seconds (currently all zero)
             blind: 0.5                  # matches the bridge's min_depth
 
@@ -28,7 +28,7 @@
             satu_acc: 30.0 # the Yesense driver publishes acceleration in m/s^2
             satu_gyro: 35.0
             acc_norm: 9.81
-            lidar_meas_cov: 0.2 # depth points are noisier than LiDAR; 0.5 made corrections too weak
+            lidar_meas_cov: 0.5 # depth points are noisier than LiDAR; must match the launch arg
             acc_cov_output: 100.0 # used only when use_imu_as_input is false
             gyr_cov_output: 100.0
             b_acc_cov: 0.0001 # keep bias random walks small; 0.01 let biases wander and caused drift
@@ -38,7 +38,7 @@
             imu_meas_omg_cov: 1.0
             gyr_cov_input: 0.1
             acc_cov_input: 0.1 # trust the IMU between depth frames (1.0 was 10x the default)
-            plane_thr: 0.08 # meters: 1.0 accepted any local cloud as a plane and corrupted updates
+            plane_thr: 0.15 # meters: 0.08 was too strict for monocular depth; tune 0.10-0.25
             match_s: 81.0
             fov_degree: 120.0 # camera HFOV is ~55 deg at f=816 px, W=854 (unused by this fork)
             gravity_align: true # disable gravity alignment for LiDAR-only
@@ -47,18 +47,23 @@
 
             # transform from imu to lidar (not used when imu_en is false).
             # Identity is only correct if camera_lidar_frame already matches the IMU body axes.
+            # Measured at rest: accel = [0.27, -0.37, +9.74], so IMU body Z is up, as assumed here.
             extrinsic_T: [ 0.0, 0.0, 0.0]
             extrinsic_R: [ 1.0, 0.0, 0.0,
                            0.0, 1.0, 0.0,
                            0.0, 0.0, 1.0 ]
 
         odometry:
-            publish_odometry_without_downsample: true
+            # false publishes one Odometry/TF per depth-frame update instead of once per point group.
+            # true floods /Odometry and TF at hundreds of Hz and is a common cause of slow RViz.
+            publish_odometry_without_downsample: false
 
         publish:
+            # /path grows without bound and is republished in full every scan; disable while tuning.
+            path_en: false
             scan_publish_en: true
             scan_bodyframe_pub_en: false
 
         pcd_save:
-            pcd_save_en: true
+            pcd_save_en: true # disable while tuning; costs CPU and memory
             interval: -1

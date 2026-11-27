@@ -87,18 +87,6 @@ mkdir -p "$HOME/.ros"
 cp -r /root/.ros/rosdep "$HOME/.ros/rosdep"
 chown -R "$USER:$USER" "$HOME/.ros"
 
-mkdir -p "$HOME/.config/autostart"
-cat << EOF > "$HOME/.config/autostart/depthpro2_bridge.desktop"
-[Desktop Entry]
-Type=Application
-Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch point_lio mapping_depthpro2.launch.py use_sim_time:=false; exec bash"
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-Name=Run ROS2 Inspection Visualizer
-Comment=Start ROS2 Inspection Visualizer on startup
-EOF
-
 
 # Add autostart for ROS2 Inspection Visualizer (only when AUTOSTART is enabled)
 # Lowercase via tr so this also works with Bash 3.2 (e.g. when run on macOS).
@@ -108,10 +96,11 @@ if [ "$AUTOSTART_LOWER" != "false" ]; then
 
 # Add autostart for ROS2 Inspection Visualizer
 mkdir -p "$HOME/.config/autostart"
-cat << EOF > "$HOME/.config/autostart/l2_unilidar_slam_rviz.desktop"
+
+cat << EOF > "$HOME/.config/autostart/depthpro2_bridge.desktop"
 [Desktop Entry]
 Type=Application
-Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch point_lio mapping_unilidar_l2.launch.py use_sim_time:=false; exec bash"
+Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch depthpro2_bridge depthpro2.launch.py use_sim_time:=false; exec bash"
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
@@ -141,27 +130,17 @@ Name=Run ROS2 Inspection Visualizer
 Comment=Start ROS2 Inspection Visualizer on startup
 EOF
 
-cat << EOF > "$HOME/.config/autostart/l2_unilidar_node.desktop"
-[Desktop Entry]
-Type=Application
-Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch unitree_lidar_ros2 node_only.py use_sim_time:=false; exec bash"
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-Name=Run ROS2 Inspection Visualizer
-Comment=Start ROS2 Inspection Visualizer on startup
-EOF
 
-cat << EOF > "$HOME/.config/autostart/navigation.desktop"
-[Desktop Entry]
-Type=Application
-Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch nav2_bringup navigation_launch.py params_file:=./src/asm_pkg/config/nav2_params.yaml use_sim_time:=false; exec bash"
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-Name=Run ROS2 Inspection Visualizer
-Comment=Start ROS2 Inspection Visualizer on startup
-EOF
+# cat << EOF > "$HOME/.config/autostart/navigation.desktop"
+# [Desktop Entry]
+# Type=Application
+# Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch nav2_bringup navigation_launch.py params_file:=./src/asm_pkg/config/nav2_params.yaml use_sim_time:=false; exec bash"
+# Hidden=false
+# NoDisplay=false
+# X-GNOME-Autostart-enabled=true
+# Name=Run ROS2 Inspection Visualizer
+# Comment=Start ROS2 Inspection Visualizer on startup
+# EOF
 
 else
     echo "* Autostart disabled: removing stale ROS2 desktop launch entries"

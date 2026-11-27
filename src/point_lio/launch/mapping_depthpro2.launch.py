@@ -41,26 +41,27 @@ def generate_launch_description():
         'rviz', default_value='true',
         description='Flag to launch RViz.')
 
-    # Point-LIO subtracts this from IMU stamps. If the IMU stamp is EARLIER than the
-    # camera capture stamp by d seconds, pass a negative value (-d) to align them.
+    # Point-LIO subtracts this from IMU stamps. For the same physical instant,
+    # time_lag = imu_stamp - camera_stamp. Start at 0 and measure the real delay
+    # before changing it; a guessed 0.1 s is several frames at 30 Hz.
     time_lag_arg = DeclareLaunchArgument(
-        'time_lag_imu_to_lidar', default_value='0.1',
+        'time_lag_imu_to_lidar', default_value='0.00',
         description='IMU-to-camera timestamp offset in seconds (Point-LIO subtracts it from IMU stamps).')
 
     bridge_min_depth_arg = DeclareLaunchArgument(
         'min_depth', default_value='0.5',
         description='Bridge near clip; must match preprocess.blind in depthpro2.yaml.')
     bridge_max_depth_arg = DeclareLaunchArgument(
-        'max_depth', default_value='15.0',
+        'max_depth', default_value='5.0',
         description='Bridge far clip; must match mapping.det_range in depthpro2.yaml.')
     point_stride_arg = DeclareLaunchArgument(
-        'point_stride', default_value='15',
+        'point_stride', default_value='5',
         description='Pixel stride for depth points; lower gives denser clouds and more stable planes.')
     point_rate_arg = DeclareLaunchArgument(
-        'point_rate', default_value='10.0',
+        'point_rate', default_value='20.0',
         description='Maximum point-cloud publish rate in Hz.')
     lidar_meas_cov_arg = DeclareLaunchArgument(
-        'lidar_meas_cov', default_value='0.1',
+        'lidar_meas_cov', default_value='0.5',
         description='Scalar measurement noise for ML-derived depth points; higher trusts them less.')
 
     laser_mapping_params = [
@@ -70,15 +71,15 @@ def generate_launch_description():
         ]),
         {
             'use_imu_as_input': True,  # Change to True to use IMU as input of Point-LIO
-            'prop_at_freq_of_imu': True,
+            'prop_at_freq_of_imu': True,  # True to propagate at IMU frequency; False to propagate at depth-frame frequency
             'check_satu': True,
             'init_map_size': 10,
             'point_filter_num': 1,  # ignored by lidar_type 5; density is set by the bridge's point_stride
             'space_down_sample': True,
-            'filter_size_surf': 0.08,
-            'filter_size_map': 0.08,
-            'cube_side_length': 30.0,  # room-sized local map
-            'runtime_pos_log_enable': False,  # Option: True
+            'filter_size_surf': 0.1,
+            'filter_size_map': 0.1,
+            'cube_side_length': 100.0,  # > 2 * 1.5 * det_range (10 m)
+            'runtime_pos_log_enable': False,  # True requires ROOT_DIR/Log/ to exist; otherwise pointlio_mapping segfaults
             'common.time_lag_imu_to_lidar': ParameterValue(
                 LaunchConfiguration('time_lag_imu_to_lidar'), value_type=float),
             'mapping.lidar_meas_cov': ParameterValue(
