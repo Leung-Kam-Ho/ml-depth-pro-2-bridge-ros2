@@ -3,6 +3,7 @@ import math
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 
 
 class MotionTracker(Node):
@@ -17,8 +18,10 @@ class MotionTracker(Node):
         topic = self.get_parameter("odom_topic").value
         period = float(self.get_parameter("log_period").value)
 
+        # RTAB-Map publishes /odom with best-effort reliability. A reliable
+        # subscription is incompatible and would receive no messages.
         self.subscription = self.create_subscription(
-            Odometry, topic, self._on_odom, 10
+            Odometry, topic, self._on_odom, qos_profile_sensor_data
         )
         self.timer = self.create_timer(period, self._log)
 

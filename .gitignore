@@ -10,3 +10,4 @@ checkpoints
 out/
 *.log
 *pcd
+*ply
