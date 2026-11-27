@@ -1,0 +1,56 @@
+# Extension templates (hidden from Compose)
+x-base-config: &base-config
+  image: ${BACKEND_IMAGE:-ghcr.io/leung-kam-ho/r2_jazzy_ml_depth_pro_2:latest}
+  build:
+    context: .
+    dockerfile: docker/backend/Dockerfile
+  init: true
+  restart: unless-stopped
+  environment:
+    - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+    - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+  volumes:
+    - .:/app
+    - /app/.venv
+    - /app/install
+    - /app/build
+    - /app/log
+
+x-gui-config: &gui-config
+  image: ${GUI_IMAGE:-ghcr.io/leung-kam-ho/r2_jazzy_ml_depth_pro_2_gui:latest}
+  build:
+    context: .
+    dockerfile: docker/rviz2/Dockerfile
+  init: true
+  restart: unless-stopped
+  environment:
+    - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+    - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    - AUTOSTART=${AUTOSTART:-true}
+  volumes:
+    - .:/app
+    - /app/.venv
+    - /app/install
+    - /app/build
+    - /app/log
+
+services:
+  gui:
+    <<: *gui-config
+    container_name: gui_node
+    ports:
+      - "6080:80"
+    shm_size: "1g"
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - AUTOSTART=${AUTOSTART:-true}
+  
+  # -- Wheeltec H30 mini IMU --
+  imu:
+    <<: *base-config
+    container_name: imu_node
+    command: >
+      bash -c " ${IMU_TCP_DEVICE} & 
+      sleep 2; 
+      ros2 launch yesense_std_ros2 yesense_node.launch.py"

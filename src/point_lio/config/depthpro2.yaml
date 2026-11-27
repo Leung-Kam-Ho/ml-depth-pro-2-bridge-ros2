@@ -1,0 +1,63 @@
+/**:
+    ros__parameters:
+        common:
+            lid_topic: "/depthpro2/points"
+            imu_topic: "/imu_data_ros"
+            con_frame: false # true: if you need to combine several LiDAR frames into one
+            con_frame_num: 1 # the number of frames combined
+            cut_frame: false # true: if you need to cut one LiDAR frame into several subframes
+            cut_frame_time_interval: 0.1 # should be integral fraction of 1 / LiDAR frequency
+            # The code reads "time_lag_imu_to_lidar" (the old "time_diff_lidar_to_imu" key was
+            # silently ignored). It shifts IMU stamps onto the camera clock, in seconds.
+            # Keep 0 only if the camera and IMU timestamps are already aligned; calibrate it
+            # otherwise -- a constant offset is a classic cause of steady drift.
+            time_lag_imu_to_lidar: 0.0
+
+        preprocess:
+            lidar_type: 5
+            scan_line: 80 # unused by the lidar_type 5 parser; pseudo-rings come from the bridge
+            timestamp_unit: 0           # the bridge "time" field is in seconds (currently all zero)
+            blind: 0.5                  # matches the bridge's min_depth
+
+        mapping:
+            imu_en: true # disable IMU for LiDAR-only SLAM
+            start_in_aggressive_motion: false
+            extrinsic_est_en: false # set true only to calibrate camera-to-IMU extrinsics with motion
+            imu_time_inte: 0.0091 # = 1 / IMU frequency; only used when imu_en is false
+            satu_acc: 30.0 # the Yesense driver publishes acceleration in m/s^2
+            satu_gyro: 35.0
+            acc_norm: 9.81
+            lidar_meas_cov: 0.5 # depth points are noisier than LiDAR: trust them less (0.3 - 1.0)
+            acc_cov_output: 100.0 # used only when use_imu_as_input is false
+            gyr_cov_output: 100.0
+            b_acc_cov: 0.0001 # keep bias random walks small; 0.01 let biases wander and caused drift
+            b_gyr_cov: 0.0001
+            det_range: 10.0 # matches the bridge's max_depth; far monocular depth is unreliable
+            imu_meas_acc_cov: 1.0 # used only when use_imu_as_input is false
+            imu_meas_omg_cov: 1.0
+            gyr_cov_input: 0.1
+            acc_cov_input: 0.1 # trust the IMU between depth frames (1.0 was 10x the default)
+            plane_thr: 0.08 # meters: 1.0 accepted any local cloud as a plane and corrupted updates
+            match_s: 81.0
+            fov_degree: 60.0 # camera HFOV is ~55 deg at f=816 px, W=854 (unused by this fork)
+            gravity_align: true # disable gravity alignment for LiDAR-only
+            gravity: [0.0, 0.0, -9.810]
+            gravity_init: [0.0, 0.0, -9.810]
+
+            # transform from imu to lidar (not used when imu_en is false).
+            # Identity is only correct if camera_lidar_frame already matches the IMU body axes.
+            extrinsic_T: [ 0.0, 0.0, 0.0]
+            extrinsic_R: [ 1.0, 0.0, 0.0,
+                           0.0, 1.0, 0.0,
+                           0.0, 0.0, 1.0 ]
+
+        odometry:
+            publish_odometry_without_downsample: true
+
+        publish:
+            scan_publish_en: true
+            scan_bodyframe_pub_en: false
+
+        pcd_save:
+            pcd_save_en: true
+            interval: -1

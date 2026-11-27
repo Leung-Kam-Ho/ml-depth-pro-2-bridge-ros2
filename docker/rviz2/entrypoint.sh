@@ -1,0 +1,193 @@
+#!/bin/bash
+
+# Create User
+USER=${USER:-root}
+HOME=/root
+if [ "$USER" != "root" ]; then
+    echo "* enable custom user: $USER"
+    useradd --create-home --shell /bin/bash --user-group --groups adm,sudo "$USER"
+    echo "$USER ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+    if [ -z "$PASSWORD" ]; then
+        echo "  set default password to \"ubuntu\""
+        PASSWORD=ubuntu
+    fi
+    HOME="/home/$USER"
+    echo "$USER:$PASSWORD" | /usr/sbin/chpasswd 2> /dev/null || echo ""
+    cp -r /root/{.config,.gtkrc-2.0,.asoundrc} "$HOME" 2>/dev/null
+    chown -R "$USER:$USER" "$HOME"
+    [ -d "/dev/snd" ] && chgrp -R adm /dev/snd
+fi
+
+# VNC password
+VNC_PASSWORD=${PASSWORD:-ubuntu}
+
+mkdir -p "$HOME/.vnc"
+echo "$VNC_PASSWORD" | vncpasswd -f > "$HOME/.vnc/passwd"
+chmod 600 "$HOME/.vnc/passwd"
+chown -R "$USER:$USER" "$HOME"
+sed -i "s/password = WebUtil.getConfigVar('password');/password = '$VNC_PASSWORD'/" /usr/lib/novnc/app/ui.js
+
+# xstartup
+XSTARTUP_PATH="$HOME/.vnc/xstartup"
+cat << EOF > "$XSTARTUP_PATH"
+#!/bin/sh
+unset DBUS_SESSION_BUS_ADDRESS
+xset s off
+xset s noblank
+xset -dpms
+mate-session
+EOF
+chown "$USER:$USER" "$XSTARTUP_PATH"
+chmod 755 "$XSTARTUP_PATH"
+
+# vncserver launch
+VNCRUN_PATH="$HOME/.vnc/vnc_run.sh"
+cat << EOF > "$VNCRUN_PATH"
+#!/bin/sh
+
+# Workaround for issue when image is created with "docker commit".
+# Thanks to @SaadRana17
+# https://github.com/Tiryoh/docker-ros2-desktop-vnc/issues/131#issuecomment-2184156856
+
+if [ -e /tmp/.X1-lock ]; then
+    rm -f /tmp/.X1-lock
+fi
+if [ -e /tmp/.X11-unix/X1 ]; then
+    rm -f /tmp/.X11-unix/X1
+fi
+
+if [ $(uname -m) = "aarch64" ]; then
+    LD_PRELOAD=/lib/aarch64-linux-gnu/libgcc_s.so.1 vncserver :1 -fg -geometry 1920x1080 -depth 24
+else
+    vncserver :1 -fg -geometry 1920x1080 -depth 24
+fi
+EOF
+
+# Supervisor
+CONF_PATH=/etc/supervisor/conf.d/supervisord.conf
+cat << EOF > $CONF_PATH
+[supervisord]
+nodaemon=true
+user=root
+[program:vnc]
+command=gosu '$USER' bash '$VNCRUN_PATH'
+[program:novnc]
+command=gosu '$USER' bash -c "/opt/websockify-venv/bin/websockify --web=/usr/lib/novnc 80 localhost:5901"
+EOF
+
+# colcon
+BASHRC_PATH="$HOME/.bashrc"
+grep -F "source /opt/ros/$ROS_DISTRO/setup.bash" "$BASHRC_PATH" || echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> "$BASHRC_PATH"
+grep -F "source /app/install/setup.bash" "$BASHRC_PATH" || echo "source /app/install/setup.bash" >> "$BASHRC_PATH"
+grep -F "export ROS_AUTOMATIC_DISCOVERY_RANGE=" "$BASHRC_PATH" || echo "# export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST" >> "$BASHRC_PATH"
+chown "$USER:$USER" "$BASHRC_PATH"
+
+# Fix rosdep permission
+mkdir -p "$HOME/.ros"
+cp -r /root/.ros/rosdep "$HOME/.ros/rosdep"
+chown -R "$USER:$USER" "$HOME/.ros"
+
+mkdir -p "$HOME/.config/autostart"
+cat << EOF > "$HOME/.config/autostart/depthpro2_bridge.desktop"
+[Desktop Entry]
+Type=Application
+Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch point_lio mapping_depthpro2.launch.py use_sim_time:=false; exec bash"
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=Run ROS2 Inspection Visualizer
+Comment=Start ROS2 Inspection Visualizer on startup
+EOF
+
+
+# Add autostart for ROS2 Inspection Visualizer (only when AUTOSTART is enabled)
+# Lowercase via tr so this also works with Bash 3.2 (e.g. when run on macOS).
+AUTOSTART_LOWER=$(printf '%s' "${AUTOSTART:-}" | tr '[:upper:]' '[:lower:]')
+if [ "$AUTOSTART_LOWER" != "false" ]; then
+    echo "* Autostart enabled: installing ROS2 desktop launch entries"
+
+# Add autostart for ROS2 Inspection Visualizer
+mkdir -p "$HOME/.config/autostart"
+cat << EOF > "$HOME/.config/autostart/l2_unilidar_slam_rviz.desktop"
+[Desktop Entry]
+Type=Application
+Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch point_lio mapping_unilidar_l2.launch.py use_sim_time:=false; exec bash"
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=Run ROS2 Inspection Visualizer
+Comment=Start ROS2 Inspection Visualizer on startup
+EOF
+
+cat << EOF > "$HOME/.config/autostart/slam_gmapping.desktop"
+[Desktop Entry]
+Type=Application
+Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && sleep 3 && ros2 launch slam_gmapping slam_gmapping.launch.py use_sim_time:=false; exec bash"
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=Run ROS2 Inspection Visualizer
+Comment=Start ROS2 Inspection Visualizer on startup
+EOF
+
+cat << EOF > "$HOME/.config/autostart/pointcloud_to_laserscan.desktop"
+[Desktop Entry]
+Type=Application
+Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch pointcloud_to_laserscan pointcloud_to_laserscan_launch.py use_sim_time:=false; exec bash"
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=Run ROS2 Inspection Visualizer
+Comment=Start ROS2 Inspection Visualizer on startup
+EOF
+
+cat << EOF > "$HOME/.config/autostart/l2_unilidar_node.desktop"
+[Desktop Entry]
+Type=Application
+Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch unitree_lidar_ros2 node_only.py use_sim_time:=false; exec bash"
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=Run ROS2 Inspection Visualizer
+Comment=Start ROS2 Inspection Visualizer on startup
+EOF
+
+cat << EOF > "$HOME/.config/autostart/navigation.desktop"
+[Desktop Entry]
+Type=Application
+Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch nav2_bringup navigation_launch.py params_file:=./src/asm_pkg/config/nav2_params.yaml use_sim_time:=false; exec bash"
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=Run ROS2 Inspection Visualizer
+Comment=Start ROS2 Inspection Visualizer on startup
+EOF
+
+else
+    echo "* Autostart disabled: removing stale ROS2 desktop launch entries"
+    # The container filesystem survives a restart, so entries written by an
+    # earlier run must be removed explicitly instead of simply not recreated.
+    rm -f "$HOME/.config/autostart"/{l2_unilidar_slam_rviz,slam_gmapping,pointcloud_to_laserscan,l2_unilidar_node,navigation}.desktop
+fi
+
+chown -R "$USER:$USER" "$HOME/.config"
+
+
+chown -R "$USER:$USER" "$HOME/Desktop"
+
+echo "============================================================================================"
+echo "Launched docker container."
+echo -e 'Open \e]8;;http://127.0.0.1:6080\e\\http://127.0.0.1:6080\e]8;;\e\\ via web browser.'
+echo ""
+echo "NOTE 1: Default user is \"$USER\", password is \"$PASSWORD\"."
+echo "NOTE 2: --security-opt seccomp=unconfined flag is required to launch Ubuntu Jammy/Noble based image on some environment."
+echo -e 'See \e]8;;https://github.com/Tiryoh/docker-ros2-desktop-vnc/pull/56\e\\https://github.com/Tiryoh/docker-ros2-desktop-vnc/pull/56\e]8;;\e\\'
+echo "============================================================================================"
+
+# clearup
+PASSWORD=
+VNC_PASSWORD=
+
+exec /bin/tini -- supervisord -n -c /etc/supervisor/supervisord.conf
+
+exec "$@"

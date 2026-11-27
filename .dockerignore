@@ -1,0 +1,17 @@
+.git
+.venv
+__pycache__
+build
+install
+log
+*.pyc
+.DS_Store
+compose.yaml
+.env*
+run.sh
+assets/
+# Sample binaries of the GoPxL SDK (2.3 GB), they are rebuilt in the image.
+src/lmi_cpp_pkg/GoPxL_SDK_Cpp/bin
+archive/
+*.mlpackage
+demo/

@@ -1,0 +1,8 @@
+yesense_pub:
+    ros__parameters:
+        serial_port: "/dev/ttyUSBIMU"
+        baud_rate: 460800
+        frame_id: "gyro_link"
+        driver_type: "ros_serial"
+
+

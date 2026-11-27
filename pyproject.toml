@@ -5,15 +5,22 @@ description = "Depth Pro 2: Sharp and Temporally Consistent Metric Monocular Dep
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "av>=14.1",
-  "click",
-  "huggingface-hub>=1.0",
-  "matplotlib",
-  "numpy",
-  "pillow>=11.3",
-  "pillow-heif",
-  "timm>=1.0.27,<1.1",
-  "torch>=2.7",
+  "catkin-pkg>=1.0.0; platform_system == 'Linux'",
+  "colcon-common-extensions>=0.3.0; platform_system == 'Linux'",
+  "empy==3.3.4; platform_system == 'Linux'",
+  "lark>=1.2.2; platform_system == 'Linux'",
+  "matplotlib>=3.7; platform_system == 'Linux'",
+  "setuptools==72.1.0; platform_system == 'Linux'",
+
+  "av>=14.1; platform_system == 'Darwin'",
+  "click; platform_system == 'Darwin'",
+  "huggingface-hub>=1.0; platform_system == 'Darwin'",
+  "matplotlib; platform_system == 'Darwin'",
+  "numpy; platform_system == 'Darwin'",
+  "pillow>=11.3; platform_system == 'Darwin'",
+  "pillow-heif; platform_system == 'Darwin'",
+  "timm>=1.0.27,<1.1; platform_system == 'Darwin'",
+  "torch>=2.7; platform_system == 'Darwin'",
 ]
 
 [project.optional-dependencies]

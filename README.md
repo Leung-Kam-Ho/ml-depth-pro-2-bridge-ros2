@@ -147,6 +147,24 @@ uv run --extra coreml python -m demo.export stream -m depthpro2-s -w 4
 
 The [demo's README](demo/README.md) details the options, and shows how to export the model to Core ML and use it in your own app. It also has the runtime on an M4 Max MacBook Pro. For convenience, we also provide exported [Core ML models](https://huggingface.co/apple/DepthPro2-coreml/).
 
+# Docker Build
+
+docker compose builds the backend and GUI images together. It may run out of memory on some hosts, in which case build the images individually.
+
+```bash
+docker compose build # might ran out of memory on some hosts; see below for individual builds
+```
+
+Or build images individually:
+
+```bash
+# Headless backend (control + sensors + nav)
+docker build -f docker/backend/Dockerfile -t r2_jazzy_ml_depth_pro_2 .
+
+# RViz2 GUI (noVNC accessible)
+docker buildx build -f docker/rviz2/Dockerfile -t r2_jazzy_ml_depth_pro_2_gui .
+```
+
 ## Citation
 
 If you find our work useful, please cite the following paper:
