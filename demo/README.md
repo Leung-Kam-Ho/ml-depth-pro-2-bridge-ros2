@@ -160,12 +160,16 @@ ros2 run depthpro2_bridge bridge_node --ros-args -p host:=192.168.1.20
 ```
 
 Replace `192.168.1.20` with the Mac's LAN IP. If ROS 2 runs on the same Mac, use `host:=127.0.0.1`.
-Then open RViz, set **Fixed Frame** to `camera_optical_frame`, and add a **PointCloud2** display for
+Then open RViz, set **Fixed Frame** to `camera_lidar_frame`, and add a **PointCloud2** display for
 `/depthpro2/points`. The bridge also accepts `port` (default `8766`), `min_depth`, `max_depth`, and
 `point_stride` (default `6`, sample every sixth pixel in each direction), `point_rate` (default
-`5` clouds per second), and topic-name parameters. These defaults reduce Point-LIO/RViz load; lower
+`15` clouds per second), and topic-name parameters. These defaults balance Point-LIO/RViz load; lower
 the rate or increase the stride further on slower machines. For a denser cloud, lower the stride or
 raise the rate.
+
+The point cloud uses `camera_lidar_frame` axes: X forward, Y left, Z up. RGB/depth images and
+CameraInfo remain in `camera_optical_frame`; the bridge publishes a static TF between those frames.
+`point_frame_id` changes the point-cloud frame name, while `frame_id` names the optical image frame.
 
 The cloud uses the app's focal-length estimate or `--focal-px` and assumes a centered principal point
 with no lens distortion. Use known camera calibration for more accurate geometry. The stream is
@@ -185,8 +189,9 @@ experimental low-motion setup, not equivalent to a real LiDAR.
 Configure Point-LIO to subscribe to `/depthpro2/points`, use its `lidar_type: 5` PointCloud2 path,
 and set `timestamp_unit: 0` (seconds). Synchronize the Mac and ROS computer clocks (for example with
 NTP), since the cloud header uses the Mac capture time. You also need a synchronized IMU and the
-correct camera-to-IMU extrinsics. The cloud is in `camera_optical_frame` (X right, Y down, Z forward);
-do not leave the extrinsic as identity unless those axes actually match the IMU body frame.
+correct camera-to-IMU extrinsics. With a forward-facing camera mounted level and aligned to the IMU,
+`camera_lidar_frame` may align with the IMU body frame; otherwise set the actual extrinsics rather
+than assuming identity.
 
 ## Use the exported model in your own app
 

@@ -11,6 +11,7 @@ import time
 import numpy as np
 import rclpy
 from builtin_interfaces.msg import Time
+from geometry_msgs.msg import TransformStamped
 from rclpy.node import Node
 from rclpy.qos import (
     QoSHistoryPolicy,
@@ -19,6 +20,7 @@ from rclpy.qos import (
     qos_profile_sensor_data,
 )
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2, PointField
+from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
 
 MAX_FRAME_BYTES = 64 * 1024 * 1024
@@ -48,10 +50,11 @@ class DepthPro2Bridge(Node):
         self.declare_parameter("host", "127.0.0.1")
         self.declare_parameter("port", 8766)
         self.declare_parameter("frame_id", "camera_optical_frame")
+        self.declare_parameter("point_frame_id", "camera_lidar_frame")
         self.declare_parameter("min_depth", 0.1)
         self.declare_parameter("max_depth", 100.0)
         self.declare_parameter("point_stride", 6)
-        self.declare_parameter("point_rate", 5.0)
+        self.declare_parameter("point_rate", 15.0)
         self.declare_parameter("depth_topic", "/depthpro2/depth/image")
         self.declare_parameter("rgb_topic", "/depthpro2/rgb/image")
         self.declare_parameter("camera_info_topic", "/depthpro2/camera_info")
@@ -60,6 +63,7 @@ class DepthPro2Bridge(Node):
         self.host = self.get_parameter("host").value
         self.port = int(self.get_parameter("port").value)
         self.frame_id = self.get_parameter("frame_id").value
+        self.point_frame_id = self.get_parameter("point_frame_id").value
         self.min_depth = float(self.get_parameter("min_depth").value)
         self.max_depth = float(self.get_parameter("max_depth").value)
         self.point_stride = max(1, int(self.get_parameter("point_stride").value))
@@ -84,6 +88,8 @@ class DepthPro2Bridge(Node):
         self.points_pub = self.create_publisher(
             PointCloud2, self.get_parameter("points_topic").value, point_qos
         )
+        self.static_tf = StaticTransformBroadcaster(self)
+        self._publish_frame_transform()
 
         self.frames = queue.Queue(maxsize=1)
         self.stop_event = threading.Event()
@@ -192,7 +198,8 @@ class DepthPro2Bridge(Node):
         self.info_pub.publish(info)
         now = time.monotonic()
         if now - self.last_point_publish >= 1.0 / self.point_rate:
-            self.points_pub.publish(self._point_cloud(image_header, rgb, depth, fx, fy, cx, cy))
+            point_header = self._header(stamp, self.point_frame_id)
+            self.points_pub.publish(self._point_cloud(point_header, rgb, depth, fx, fy, cx, cy))
             self.last_point_publish = now
 
     @staticmethod
@@ -213,6 +220,19 @@ class DepthPro2Bridge(Node):
         stamp.nanosec = nanoseconds % 1_000_000_000
         return stamp
 
+    def _publish_frame_transform(self):
+        # Parent camera_lidar_frame uses x-forward/y-left/z-up; child camera_optical_frame
+        # uses x-right/y-down/z-forward. The origins coincide; this is the axis conversion.
+        transform = TransformStamped()
+        transform.header.stamp = self.get_clock().now().to_msg()
+        transform.header.frame_id = self.point_frame_id
+        transform.child_frame_id = self.frame_id
+        transform.transform.rotation.x = -0.5
+        transform.transform.rotation.y = 0.5
+        transform.transform.rotation.z = -0.5
+        transform.transform.rotation.w = 0.5
+        self.static_tf.sendTransform(transform)
+
     def _point_cloud(self, header, rgb, depth, fx, fy, cx, cy):
         stride = self.point_stride
         sampled_depth = depth[::stride, ::stride]
@@ -226,9 +246,13 @@ class DepthPro2Bridge(Node):
         rows, cols = np.nonzero(valid)
         z = sampled_depth[rows, cols].astype(np.float32, copy=False)
         points = np.empty(z.size, dtype=POINT_DTYPE)
-        points["x"] = (cols.astype(np.float32) * stride - cx) * z / fx
-        points["y"] = (rows.astype(np.float32) * stride - cy) * z / fy
-        points["z"] = z
+        x_optical = (cols.astype(np.float32) * stride - cx) * z / fx
+        y_optical = (rows.astype(np.float32) * stride - cy) * z / fy
+        # Convert optical (right, down, forward) into the usual LiDAR/body axes
+        # (forward, left, up), which Point-LIO expects for its sensor frame.
+        points["x"] = z
+        points["y"] = -x_optical
+        points["z"] = -y_optical
         colors = sampled_rgb[rows, cols]
         # Point-LIO lidar_type=5 expects these fields. They are camera-derived proxies, not
         # physical LiDAR measurements: image rows act as pseudo-rings, luminance as intensity,
