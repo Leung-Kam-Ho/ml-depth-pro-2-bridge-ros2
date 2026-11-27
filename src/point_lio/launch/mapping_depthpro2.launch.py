@@ -31,6 +31,7 @@ from launch.actions import GroupAction, DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -39,7 +40,29 @@ def generate_launch_description():
     rviz_arg = DeclareLaunchArgument(
         'rviz', default_value='true',
         description='Flag to launch RViz.')
-    
+
+    # Point-LIO subtracts this from IMU stamps. If the IMU stamp is EARLIER than the
+    # camera capture stamp by d seconds, pass a negative value (-d) to align them.
+    time_lag_arg = DeclareLaunchArgument(
+        'time_lag_imu_to_lidar', default_value='0.1',
+        description='IMU-to-camera timestamp offset in seconds (Point-LIO subtracts it from IMU stamps).')
+
+    bridge_min_depth_arg = DeclareLaunchArgument(
+        'min_depth', default_value='0.5',
+        description='Bridge near clip; must match preprocess.blind in depthpro2.yaml.')
+    bridge_max_depth_arg = DeclareLaunchArgument(
+        'max_depth', default_value='15.0',
+        description='Bridge far clip; must match mapping.det_range in depthpro2.yaml.')
+    point_stride_arg = DeclareLaunchArgument(
+        'point_stride', default_value='15',
+        description='Pixel stride for depth points; lower gives denser clouds and more stable planes.')
+    point_rate_arg = DeclareLaunchArgument(
+        'point_rate', default_value='10.0',
+        description='Maximum point-cloud publish rate in Hz.')
+    lidar_meas_cov_arg = DeclareLaunchArgument(
+        'lidar_meas_cov', default_value='0.1',
+        description='Scalar measurement noise for ML-derived depth points; higher trusts them less.')
+
     laser_mapping_params = [
         PathJoinSubstitution([
             FindPackageShare('point_lio'),
@@ -52,10 +75,14 @@ def generate_launch_description():
             'init_map_size': 10,
             'point_filter_num': 1,  # ignored by lidar_type 5; density is set by the bridge's point_stride
             'space_down_sample': True,
-            'filter_size_surf': 0.10,
-            'filter_size_map': 0.10,
-            'cube_side_length': 150.0,  # larger than a room, so the local map is never pruned
+            'filter_size_surf': 0.08,
+            'filter_size_map': 0.08,
+            'cube_side_length': 30.0,  # room-sized local map
             'runtime_pos_log_enable': False,  # Option: True
+            'common.time_lag_imu_to_lidar': ParameterValue(
+                LaunchConfiguration('time_lag_imu_to_lidar'), value_type=float),
+            'mapping.lidar_meas_cov': ParameterValue(
+                LaunchConfiguration('lidar_meas_cov'), value_type=float),
         }
     ]
 
@@ -76,10 +103,10 @@ def generate_launch_description():
         parameters=[{
             'host': 'host.docker.internal',
             'port': 8766,
-            'min_depth': 0.5,   # matches Point-LIO's "blind"; drops near-field depth noise
-            'max_depth': 10.0,  # matches mapping.det_range; far monocular depth is unreliable
-            'point_stride': 8,  # denser clouds give more stable 5-point plane fits
-            'point_rate': 15.0,
+            'min_depth': ParameterValue(LaunchConfiguration('min_depth'), value_type=float),
+            'max_depth': ParameterValue(LaunchConfiguration('max_depth'), value_type=float),
+            'point_stride': ParameterValue(LaunchConfiguration('point_stride'), value_type=int),
+            'point_rate': ParameterValue(LaunchConfiguration('point_rate'), value_type=float),
         }],
     )
 
@@ -99,6 +126,12 @@ def generate_launch_description():
     # Assemble the launch description
     ld = LaunchDescription([
         rviz_arg,
+        time_lag_arg,
+        bridge_min_depth_arg,
+        bridge_max_depth_arg,
+        point_stride_arg,
+        point_rate_arg,
+        lidar_meas_cov_arg,
         laser_mapping_node,
         depthpro2_bridge_node,
         GroupAction(
