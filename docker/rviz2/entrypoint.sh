@@ -97,7 +97,7 @@ if [ "$AUTOSTART_LOWER" != "false" ]; then
 # Add autostart for ROS2 Inspection Visualizer
 mkdir -p "$HOME/.config/autostart"
 
-cat << EOF > "$HOME/.config/autostart/depthpro2_bridge.desktop"
+cat << EOF > "$HOME/.config/autostart/depthpro2.desktop"
 [Desktop Entry]
 Type=Application
 Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch depthpro2_bridge depthpro2.launch.py use_sim_time:=false; exec bash"
@@ -108,28 +108,16 @@ Name=Run ROS2 Inspection Visualizer
 Comment=Start ROS2 Inspection Visualizer on startup
 EOF
 
-cat << EOF > "$HOME/.config/autostart/slam_gmapping.desktop"
+cat << EOF > "$HOME/.config/autostart/point_lio_depthpro2.desktop"
 [Desktop Entry]
 Type=Application
-Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && sleep 3 && ros2 launch slam_gmapping slam_gmapping.launch.py use_sim_time:=false; exec bash"
+Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch point_lio mapping_depthpro2.launch.py use_sim_time:=false; exec bash"
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
 Name=Run ROS2 Inspection Visualizer
 Comment=Start ROS2 Inspection Visualizer on startup
 EOF
-
-cat << EOF > "$HOME/.config/autostart/pointcloud_to_laserscan.desktop"
-[Desktop Entry]
-Type=Application
-Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch pointcloud_to_laserscan pointcloud_to_laserscan_launch.py use_sim_time:=false; exec bash"
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-Name=Run ROS2 Inspection Visualizer
-Comment=Start ROS2 Inspection Visualizer on startup
-EOF
-
 
 # cat << EOF > "$HOME/.config/autostart/navigation.desktop"
 # [Desktop Entry]

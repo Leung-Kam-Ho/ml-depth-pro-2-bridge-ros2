@@ -41,29 +41,6 @@ def generate_launch_description():
         'rviz', default_value='true',
         description='Flag to launch RViz.')
 
-    # Point-LIO subtracts this from IMU stamps. For the same physical instant,
-    # time_lag = imu_stamp - camera_stamp. Start at 0 and measure the real delay
-    # before changing it; a guessed 0.1 s is several frames at 30 Hz.
-    time_lag_arg = DeclareLaunchArgument(
-        'time_lag_imu_to_lidar', default_value='0.00',
-        description='IMU-to-camera timestamp offset in seconds (Point-LIO subtracts it from IMU stamps).')
-
-    bridge_min_depth_arg = DeclareLaunchArgument(
-        'min_depth', default_value='0.5',
-        description='Bridge near clip; must match preprocess.blind in depthpro2.yaml.')
-    bridge_max_depth_arg = DeclareLaunchArgument(
-        'max_depth', default_value='5.0',
-        description='Bridge far clip; must match mapping.det_range in depthpro2.yaml.')
-    point_stride_arg = DeclareLaunchArgument(
-        'point_stride', default_value='5',
-        description='Pixel stride for depth points; lower gives denser clouds and more stable planes.')
-    point_rate_arg = DeclareLaunchArgument(
-        'point_rate', default_value='20.0',
-        description='Maximum point-cloud publish rate in Hz.')
-    lidar_meas_cov_arg = DeclareLaunchArgument(
-        'lidar_meas_cov', default_value='0.5',
-        description='Scalar measurement noise for ML-derived depth points; higher trusts them less.')
-
     laser_mapping_params = [
         PathJoinSubstitution([
             FindPackageShare('point_lio'),
@@ -80,10 +57,6 @@ def generate_launch_description():
             'filter_size_map': 0.1,
             'cube_side_length': 100.0,  # > 2 * 1.5 * det_range (10 m)
             'runtime_pos_log_enable': False,  # True requires ROOT_DIR/Log/ to exist; otherwise pointlio_mapping segfaults
-            'common.time_lag_imu_to_lidar': ParameterValue(
-                LaunchConfiguration('time_lag_imu_to_lidar'), value_type=float),
-            'mapping.lidar_meas_cov': ParameterValue(
-                LaunchConfiguration('lidar_meas_cov'), value_type=float),
         }
     ]
 
@@ -97,20 +70,6 @@ def generate_launch_description():
         # prefix='gdb -ex run --args'
     )
     
-    depthpro2_bridge_node = Node(
-        package='depthpro2_bridge',
-        executable='bridge_node',
-        name='depthpro2_bridge',
-        parameters=[{
-            'host': 'host.docker.internal',
-            'port': 8766,
-            'min_depth': ParameterValue(LaunchConfiguration('min_depth'), value_type=float),
-            'max_depth': ParameterValue(LaunchConfiguration('max_depth'), value_type=float),
-            'point_stride': ParameterValue(LaunchConfiguration('point_stride'), value_type=int),
-            'point_rate': ParameterValue(LaunchConfiguration('point_rate'), value_type=float),
-        }],
-    )
-
     # Conditional RViz node launch
     rviz_node = Node(
         package='rviz2',
@@ -127,14 +86,7 @@ def generate_launch_description():
     # Assemble the launch description
     ld = LaunchDescription([
         rviz_arg,
-        time_lag_arg,
-        bridge_min_depth_arg,
-        bridge_max_depth_arg,
-        point_stride_arg,
-        point_rate_arg,
-        lidar_meas_cov_arg,
         laser_mapping_node,
-        depthpro2_bridge_node,
         GroupAction(
             actions=[rviz_node],
             condition=IfCondition(LaunchConfiguration('rviz'))

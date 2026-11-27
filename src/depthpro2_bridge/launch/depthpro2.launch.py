@@ -51,7 +51,7 @@ def generate_launch_description():
     )
     point_stride_arg = DeclareLaunchArgument(
         "point_stride",
-        default_value="15",
+        default_value="8",
         description="Sample every Nth pixel in each direction when building the cloud.",
     )
     point_rate_arg = DeclareLaunchArgument(
