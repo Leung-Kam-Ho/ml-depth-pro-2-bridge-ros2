@@ -147,25 +147,29 @@ On the Mac, start the demo with the stream reachable on your network:
 ./demo/run.sh depthpro2-s_480x854_w4.mlpackage --focal-px 816 --api-host 0.0.0.0
 ```
 
-On the ROS 2 machine, add `demo/ros2/depthpro2_bridge` to a colcon workspace and build it:
+On a standalone ROS 2 machine, add `src/depthpro2_bridge` from this repository to a colcon workspace
+and build it. The Docker path is described in the [root README](../README.md#ros-2-rgb-d-bridge).
 
 ```bash
 mkdir -p ~/ros2_ws/src
-ln -s /path/to/ml-depth-pro-2/demo/ros2/depthpro2_bridge ~/ros2_ws/src/
+ln -s /path/to/ml-depth-pro-2-bridge-ros2/src/depthpro2_bridge ~/ros2_ws/src/
 cd ~/ros2_ws
 source /opt/ros/jazzy/setup.bash  # replace jazzy with your installed ROS 2 distro
 colcon build --packages-select depthpro2_bridge
 source install/setup.bash
-ros2 run depthpro2_bridge bridge_node --ros-args -p host:=192.168.1.20
+ros2 run depthpro2_bridge bridge_node --ros-args -p host:=192.168.1.20 -p image_rate:=5.0
 ```
 
 Replace `192.168.1.20` with the Mac's LAN IP. If ROS 2 runs on the same Mac, use `host:=127.0.0.1`.
 Then open RViz, set **Fixed Frame** to `camera_lidar_frame`, and add a **PointCloud2** display for
-`/depthpro2/points`. The bridge also accepts `port` (default `8766`), `min_depth`, `max_depth`, and
-`point_stride` (default `6`, sample every sixth pixel in each direction), `point_rate` (default
-`15` clouds per second), and topic-name parameters. These defaults balance Point-LIO/RViz load; lower
-the rate or increase the stride further on slower machines. For a denser cloud, lower the stride or
-raise the rate.
+`/depthpro2/points`.
+
+The bridge accepts `port` (default `8766`), `min_depth`, `max_depth`, `point_stride`, `image_rate`,
+`point_rate`, and topic-name parameters. The bare node defaults are `point_stride:=6`,
+`image_rate:=0` (no limit), and `point_rate:=15.0`; the launch file uses `point_stride:=12`,
+`image_rate:=5.0`, and `point_rate:=30.0`. Docker autostart overrides the rates to `image_rate:=8.0`
+and `point_rate:=5.0`. Set either rate to `0` to publish every frame. Lower `image_rate` if RTAB-Map
+odometry lags; RTAB-Map consumes images, not `/depthpro2/points`.
 
 The point cloud uses `camera_lidar_frame` axes: X forward, Y left, Z up. RGB/depth images and
 CameraInfo remain in `camera_optical_frame`; the bridge publishes a static TF between those frames.
@@ -176,22 +180,16 @@ with no lens distortion. Use known camera calibration for more accurate geometry
 unauthenticated and contains camera imagery; expose it only on a trusted network and restrict access
 with your firewall.
 
-### Experimental Point-LIO input
+### PointCloud2 compatibility fields
 
-The PointCloud2 includes the field names/types used by the `lidar_type: 5` Point-LIO parser:
-`intensity` (`float32`), `ring` (`uint16`), and `time` (`float32`, seconds), in addition to XYZ.
-These are compatibility proxies, not LiDAR measurements: intensity is RGB luminance, ring is the
-sampled image row, and time is zero for every point (the frame is treated as instantaneous). For a
-480-pixel-high model with the default stride of 6, the pseudo ring count is 80. Point-LIO can parse
-this cloud, but zero per-point time means it cannot deskew motion within a frame; this is only an
-experimental low-motion setup, not equivalent to a real LiDAR.
+The cloud includes `intensity` (`float32`), `ring` (`uint16`), and `time` (`float32`, seconds) in
+addition to XYZ. These are compatibility proxies, not LiDAR measurements: intensity is RGB luminance,
+ring is the sampled image row, and time is zero for every point (the frame is treated as
+instantaneous). For a 480-pixel-high model with `point_stride:=12`, the pseudo ring count is 40.
 
-Configure Point-LIO to subscribe to `/depthpro2/points`, use its `lidar_type: 5` PointCloud2 path,
-and set `timestamp_unit: 0` (seconds). Synchronize the Mac and ROS computer clocks (for example with
-NTP), since the cloud header uses the Mac capture time. You also need a synchronized IMU and the
-correct camera-to-IMU extrinsics. With a forward-facing camera mounted level and aligned to the IMU,
-`camera_lidar_frame` may align with the IMU body frame; otherwise set the actual extrinsics rather
-than assuming identity.
+This fork uses RTAB-Map for mapping and no longer ships Point-LIO in `src/`. The fields remain for
+other consumers that expect a LiDAR-like layout, but zero per-point time means no motion deskew and
+the cloud is not equivalent to a real LiDAR scan.
 
 ## Use the exported model in your own app
 

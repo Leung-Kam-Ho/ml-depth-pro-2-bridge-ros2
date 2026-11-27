@@ -12,6 +12,11 @@ Depth Pro 2 estimates the depth of every pixel, in meters, from images taken wit
 
 This repository contains the code to run the models and links to their weights. It does not include training or evaluation code.
 
+This fork also turns the Mac demo into a simulated RGB-D camera for ROS 2. Depth Pro 2 runs on the
+Mac with Core ML/Metal; a Linux or Docker container receives aligned RGB and metric depth over TCP,
+runs RTAB-Map on `/map`, logs displacement and yaw, and exports the final cloud to `maps/` when the
+RTAB-Map terminal is interrupted. See [ROS 2 RGB-D bridge](#ros-2-rgb-d-bridge).
+
 ## Getting started
 
 On Linux or an Apple silicon Mac, install [uv](https://docs.astral.sh/uv/), clone this repository, and run:
@@ -147,15 +152,137 @@ uv run --extra coreml python -m demo.export stream -m depthpro2-s -w 4
 
 The [demo's README](demo/README.md) details the options, and shows how to export the model to Core ML and use it in your own app. It also has the runtime on an M4 Max MacBook Pro. For convenience, we also provide exported [Core ML models](https://huggingface.co/apple/DepthPro2-coreml/).
 
-# Docker Build
+## ROS 2 RGB-D bridge
 
-docker compose builds the backend and GUI images together. It may run out of memory on some hosts, in which case build the images individually.
+This fork exposes the Mac demo as a simulated RealSense-style RGB-D camera. The Mac keeps running
+Depth Pro 2 with Core ML/Metal; the ROS 2 container only consumes the resulting RGB and depth frames.
+The container's RTAB-Map build is CPU-only, so Docker does not use the Mac's GPU.
+
+### Architecture
+
+| Component | Role |
+|---|---|
+| Mac demo | Streams aligned `rgb8` frames and `32FC1` metric depth over TCP port `8766` |
+| `depthpro2_bridge` | Publishes images, `CameraInfo`, a colored point cloud, and static camera TF |
+| RTAB-Map | RGB-D visual odometry on `/odom` and mapping on `/map` |
+| `track_motion` | Logs displacement and yaw from `/odom` every 0.5 s |
+| `rtabmap_autosave` | Exports the final map to PCD/PLY when the RTAB-Map terminal receives Ctrl+C |
+
+The bridge publishes:
+
+| Topic | Type | Contents |
+|---|---|---|
+| `/depthpro2/rgb/image` | `sensor_msgs/Image` | Aligned RGB image |
+| `/depthpro2/depth/image` | `sensor_msgs/Image` | Metric depth, `32FC1` |
+| `/depthpro2/camera_info` | `sensor_msgs/CameraInfo` | Focal length and centered principal point |
+| `/depthpro2/points` | `sensor_msgs/PointCloud2` | Colored XYZ points, sampled by `point_stride` |
+| `/odom` | `nav_msgs/Odometry` | RTAB-Map visual odometry |
+| `/map` | `nav_msgs/OccupancyGrid` | RTAB-Map assembled map |
+
+TF is `camera_lidar_frame -> camera_optical_frame -> base_footprint`, with RTAB-Map owning
+`odom -> base_footprint` and `map -> odom`. The bridge's `publish_odom_tf` stays false so it does not
+fight RTAB-Map for the base transform.
+
+### Start the Mac stream
+
+Export and run the Core ML model as described in the [Mac demo](#mac-demo), but bind the stream to
+the network so Docker can reach it:
 
 ```bash
-docker compose build # might ran out of memory on some hosts; see below for individual builds
+./demo/run.sh depthpro2-s_480x854_w4.mlpackage --focal-px 816 --api-host 0.0.0.0
 ```
 
-Or build images individually:
+Use a trusted network: the API and stream have no authentication. From Docker Desktop on macOS, the
+bridge reaches the Mac through `host.docker.internal`. On another Linux host, pass
+`host:=<mac-ip>` to the bridge launch.
+
+### Start Docker
+
+```bash
+docker compose down
+docker compose up -d --build gui
+```
+
+Open <http://localhost:6080> for the noVNC desktop. With `AUTOSTART=true` (the default), three
+terminals start automatically:
+
+1. Depth Pro 2 bridge
+2. Motion tracker
+3. RTAB-Map with autosave
+
+Set `AUTOSTART=false` to keep the desktop empty and launch nodes manually.
+
+Verify the live topics:
+
+```bash
+docker exec -u ubuntu gui_node bash -lc '
+source /app/install/setup.bash
+ros2 topic hz /depthpro2/rgb/image
+ros2 topic hz /depthpro2/points
+ros2 topic hz /odom
+ros2 topic hz /map
+'
+```
+
+### Tuning
+
+The autostart command in `docker/rviz2/entrypoint.sh` currently caps images at 8 Hz and point clouds
+at 5 Hz:
+
+```text
+image_rate:=8.0 point_rate:=5.0
+```
+
+Either value can be set to `0` to publish every streamed frame. Lower `image_rate` if RTAB-Map's
+visual odometry lags; raising it mainly increases CPU load, since RTAB-Map consumes the images, not
+`/depthpro2/points`.
+
+RTAB-Map launch arguments live in `DEFAULT_LAUNCH_ARGS` in
+`src/depthpro2_bridge/depthpro2_bridge/rtabmap_autosave.py`. The conservative defaults are:
+
+```text
+--Rtabmap/DetectionRate 1 --Kp/MaxFeatures 300
+--Odom/ImageDecimation 2 --Kp/MaxFeatures 300
+approx_sync_max_interval:=0.5 queue_size:=20 topic_queue_size:=10
+```
+
+More aggressive feature/decimation settings can make odometry fail to publish `/odom`, which then
+produces RTAB-Map's "Did not receive data since 5 seconds" warning. If `/odom` and `/map` look healthy
+but the VNC window is choppy, set `rtabmapviz:=false` in `DEFAULT_LAUNCH_ARGS`.
+
+### Displacement and yaw
+
+The `track_motion` terminal prints horizontal and 3D distance from the first `/odom` pose, yaw,
+yaw change from the start, accumulated path, and accumulated rotation. For loop-closure-corrected
+values, read the map frame instead:
+
+```bash
+docker exec -u ubuntu gui_node bash -lc '
+source /app/install/setup.bash
+ros2 run tf2_ros tf2_echo map base_footprint
+'
+```
+
+The `z` value under **Rotation in RPY (degree)** is yaw.
+
+### Export a point cloud
+
+Press **Ctrl+C** in the RTAB-Map terminal. `rtabmap_autosave` stops the launch cleanly and writes
+timestamped files into `maps/` in the repository root on the host:
+
+```text
+maps/depthpro2_map_<timestamp>_cloud.ply
+maps/depthpro2_map_<timestamp>_cloud.pcd
+```
+
+The export happens once per launch, even if Ctrl+C is pressed repeatedly. RTAB-Map still starts with
+`--delete_db_on_start`, so export before restarting the container. The voxel size and depth
+decimation can be changed with `--voxel` and `--decimation` on `rtabmap_autosave`.
+
+### Build images separately
+
+`docker compose build` builds both images and may run out of memory on some hosts. Build them one at
+a time instead:
 
 ```bash
 # Headless backend (control + sensors + nav)
