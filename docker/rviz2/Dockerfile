@@ -98,6 +98,7 @@ RUN (apt-get update -q || true) && \
     ros-${ROS_DISTRO}-rqt-bag \
     ros-${ROS_DISTRO}-navigation2 \
     ros-${ROS_DISTRO}-nav2-bringup \
+    ros-${ROS_DISTRO}-rtabmap-ros \
     ros-${ROS_DISTRO}-twist-mux \
     gnome-terminal && \
     rosdep init && \
@@ -146,7 +147,7 @@ RUN . /opt/ros/jazzy/setup.sh && \
 
 RUN . /opt/ros/jazzy/setup.sh && \
     uv run python -m colcon build --symlink-install 
-#--packages-select unitree_lidar_ros2 point_lio unitree_lidar_sdk
+#--packages-select depthpro2_bridge pointcloud_to_laserscan slam_gmapping
 
 RUN rm /etc/apt/apt.conf.d/docker-clean
 

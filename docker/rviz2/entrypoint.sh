@@ -94,8 +94,12 @@ AUTOSTART_LOWER=$(printf '%s' "${AUTOSTART:-}" | tr '[:upper:]' '[:lower:]')
 if [ "$AUTOSTART_LOWER" != "false" ]; then
     echo "* Autostart enabled: installing ROS2 desktop launch entries"
 
-# Add autostart for ROS2 Inspection Visualizer
+# The container filesystem survives restarts, so remove entries written by older
+# configurations before installing the current Depth Pro 2 + RTAB-Map stack.
 mkdir -p "$HOME/.config/autostart"
+rm -f "$HOME/.config/autostart"/{point_lio_depthpro2,slam_gmapping,pointcloud_to_laserscan,l2_unilidar_slam_rviz,l2_unilidar_node,navigation}.desktop
+
+# Add autostart for the Depth Pro 2 bridge
 
 cat << EOF > "$HOME/.config/autostart/depthpro2.desktop"
 [Desktop Entry]
@@ -104,19 +108,19 @@ Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch de
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
-Name=Run ROS2 Inspection Visualizer
-Comment=Start ROS2 Inspection Visualizer on startup
+Name=Depth Pro 2 ROS 2 Bridge
+Comment=Start the Depth Pro 2 RGB-D stream bridge on startup
 EOF
 
-cat << EOF > "$HOME/.config/autostart/point_lio_depthpro2.desktop"
+cat << EOF > "$HOME/.config/autostart/rtabmap_depthpro2.desktop"
 [Desktop Entry]
 Type=Application
-Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch point_lio mapping_depthpro2.launch.py use_sim_time:=false; exec bash"
+Exec=gnome-terminal -- bash -c "source /app/install/setup.bash && ros2 launch rtabmap_launch rtabmap.launch.py rtabmap_args:=--delete_db_on_start rgb_topic:=/depthpro2/rgb/image depth_topic:=/depthpro2/depth/image camera_info_topic:=/depthpro2/camera_info frame_id:=base_footprint odom_topic:=/odom vo_frame_id:=odom map_topic:=/map approx_sync:=true qos:=2 queue_size:=20 rtabmapviz:=true rviz:=false use_sim_time:=false; exec bash"
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
-Name=Run ROS2 Inspection Visualizer
-Comment=Start ROS2 Inspection Visualizer on startup
+Name=RTAB-Map Depth Pro 2
+Comment=Run RGB-D SLAM on the Depth Pro 2 stream on startup
 EOF
 
 # cat << EOF > "$HOME/.config/autostart/navigation.desktop"
@@ -134,7 +138,7 @@ else
     echo "* Autostart disabled: removing stale ROS2 desktop launch entries"
     # The container filesystem survives a restart, so entries written by an
     # earlier run must be removed explicitly instead of simply not recreated.
-    rm -f "$HOME/.config/autostart"/{l2_unilidar_slam_rviz,slam_gmapping,pointcloud_to_laserscan,l2_unilidar_node,navigation}.desktop
+    rm -f "$HOME/.config/autostart"/{depthpro2,rtabmap_depthpro2,point_lio_depthpro2,slam_gmapping,pointcloud_to_laserscan,l2_unilidar_slam_rviz,l2_unilidar_node,navigation}.desktop
 fi
 
 chown -R "$USER:$USER" "$HOME/.config"

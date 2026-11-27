@@ -32,12 +32,21 @@ def generate_launch_description():
     base_frame_arg = DeclareLaunchArgument(
         "base_frame",
         default_value="base_footprint",
-        description="Robot base frame expected by slam_gmapping.",
+        description="Robot base frame; RTAB-Map visual odometry publishes odom -> this frame.",
     )
     odom_frame_arg = DeclareLaunchArgument(
         "odom_frame",
         default_value="odom",
-        description="Odometry frame expected by slam_gmapping.",
+        description="Odometry frame used by the 2D GMapping fallback.",
+    )
+    base_parent_frame_arg = DeclareLaunchArgument(
+        "base_parent_frame",
+        default_value="imu_link",
+        description=(
+            "Parent frame for the optional static base_frame transform. RTAB-Map "
+            "publishes real odometry, so keep publish_odom_tf:=false; this is only "
+            "for static TF tests."
+        ),
     )
     min_depth_arg = DeclareLaunchArgument(
         "min_depth",
@@ -74,11 +83,11 @@ def generate_launch_description():
     )
     publish_odom_tf_arg = DeclareLaunchArgument(
         "publish_odom_tf",
-        default_value="true",
+        default_value="false",
         description=(
-            "Publish static odom_frame -> base_frame TF so slam_gmapping can resolve "
-            "scans without a real odometry source. Set false when real odometry or "
-            "Point-LIO publishes this transform."
+            "Publish static base_parent_frame -> base_frame TF. Keep false with "
+            "RTAB-Map because its visual odometry publishes odom -> base_frame; "
+            "enable only for a static TF test."
         ),
     )
 
@@ -139,10 +148,10 @@ def generate_launch_description():
         ],
     )
 
-    odom_to_base_tf = Node(
+    base_parent_to_base_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
-        name="odom_to_base_footprint_tf",
+        name="base_parent_to_base_footprint_tf",
         output="screen",
         condition=IfCondition(LaunchConfiguration("publish_odom_tf")),
         parameters=[
@@ -159,7 +168,7 @@ def generate_launch_description():
             "0",
             "0",
             "0",
-            LaunchConfiguration("odom_frame"),
+            LaunchConfiguration("base_parent_frame"),
             LaunchConfiguration("base_frame"),
         ],
     )
@@ -171,6 +180,7 @@ def generate_launch_description():
         point_frame_id_arg,
         base_frame_arg,
         odom_frame_arg,
+        base_parent_frame_arg,
         min_depth_arg,
         max_depth_arg,
         point_stride_arg,
@@ -180,5 +190,5 @@ def generate_launch_description():
         publish_odom_tf_arg,
         bridge_node,
         base_to_lidar_tf,
-        odom_to_base_tf,
+        base_parent_to_base_tf,
     ])

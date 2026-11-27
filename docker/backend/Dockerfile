@@ -86,7 +86,7 @@ RUN . /opt/ros/jazzy/setup.sh && \
     uv run python -m colcon build --packages-select serial --symlink-install
 RUN . /opt/ros/jazzy/setup.sh && \
     uv run python -m colcon build --symlink-install 
-# --packages-select unitree_lidar_ros2 point_lio unitree_lidar_sdk
+# --packages-select depthpro2_bridge pointcloud_to_laserscan slam_gmapping
 
 COPY docker/backend/entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh

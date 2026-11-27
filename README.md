@@ -159,10 +159,10 @@ Or build images individually:
 
 ```bash
 # Headless backend (control + sensors + nav)
-docker build -f docker/backend/Dockerfile -t r2_jazzy_ml_depth_pro_2 .
+docker compose build imu
 
 # RViz2 GUI (noVNC accessible)
-docker buildx build -f docker/rviz2/Dockerfile -t r2_jazzy_ml_depth_pro_2_gui .
+docker compose build gui
 ```
 
 ## Citation
